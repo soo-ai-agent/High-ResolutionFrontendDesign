@@ -9,8 +9,11 @@ const TOKEN_RE = /^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)/
 // 프록시 쓰기(repo)·웹훅 등록(admin:repo_hook)·Actions 조회(workflow) 권한을 미리 담아요.
 const NEW_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,admin:repo_hook,workflow&description=Agent%20Flow"
 
+const DEMO_USER = { login: "octocat", name: "데모 사용자", avatar_url: "" }
+
 function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
   const { connected, checking, user, connect, disconnect } = useGitHub()
+  const [demo, setDemo] = useState(false)
   const [token, setToken] = useState("")
   const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -33,8 +36,8 @@ function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
     }
   }
 
-  // 첫 상태 조회 중 — "연결 필요"가 잠깐 깜빡이는 걸 막아요.
-  if (checking && !connected) {
+  // 첫 상태 조회 중 — "연결 필요"가 잠깐 깜빡이는 걸 막아요. (데모 미리보기 중엔 건너뛰어요.)
+  if (checking && !connected && !demo) {
     return (
       <Card className="p-6">
         <div className="flex items-center gap-3">
@@ -45,44 +48,9 @@ function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
     )
   }
 
-  if (connected) {
-    return (
-      <Card className="p-6">
-        <div className="flex items-center gap-3">
-          {user?.avatar_url ? (
-            <img src={user.avatar_url} alt="" className="h-10 w-10 rounded-full" />
-          ) : (
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2"><Icon name="github" className="h-5 w-5 text-text-secondary" /></span>
-          )}
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2">
-              <span className="text-[15px] font-bold text-text-primary">{user?.name ?? user?.login ?? "GitHub 계정"}</span>
-              <Badge tone="success">연결됨</Badge>
-            </div>
-            <div className="text-[13px] text-text-tertiary">{user ? `@${user.login}` : "실제 저장소·이슈·문서를 불러올 수 있어요"}</div>
-          </div>
-          <Button onClick={disconnect} icon={<Icon name="github" className="h-4 w-4" />}>연결 해제</Button>
-        </div>
-
-        {/* 지금 무엇이 켜졌는지 */}
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <Cap icon="doc" label="자료·이슈 읽기" />
-          <Cap icon="plus" label="이슈·@claude 쓰기" />
-          <Cap icon="sync" label="웹훅 등록" />
-        </div>
-
-        {/* 바로 가기 */}
-        <div className="mt-4 flex flex-wrap gap-2">
-          <Button icon={<Icon name="sync" className="h-4 w-4" />} onClick={() => navigate("mirror")}>GitHub 미러 열기</Button>
-          <Button icon={<Icon name="doc" className="h-4 w-4" />} onClick={() => navigate("sources")}>자료 불러오기</Button>
-        </div>
-
-        <div className="mt-4 flex items-center gap-2 rounded-[10px] bg-success-light px-4 py-2.5">
-          <Icon name="lock" className="h-4 w-4 text-success" />
-          <span className="text-[12px] font-semibold text-success">토큰은 서버 메모리에만 있어요. 세션이 끝나거나 ‘연결 해제’ 하면 사라져요.</span>
-        </div>
-      </Card>
-    )
+  // 실제 연결됨, 또는 데모 미리보기 → 연결 후 뷰
+  if (connected || demo) {
+    return <ConnectedView user={connected ? user : DEMO_USER} demo={!connected} navigate={navigate} onExit={connected ? disconnect : () => setDemo(false)} />
   }
 
   return (
@@ -129,6 +97,58 @@ function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
         <div>· 웹훅 등록까지 하려면 <code className="rounded bg-surface px-1 font-mono">admin:repo_hook</code>, Actions 조회는 <code className="rounded bg-surface px-1 font-mono">workflow</code>를 함께 선택하세요. (위 ‘토큰 만들기’에 미리 담겨 있어요.)</div>
         <div>· 토큰은 서버로 전송돼 세션 동안 서버 메모리에만 보관되고, 브라우저·화면에는 저장·표시되지 않아요.</div>
         <div>· GitHub 요청은 모두 서버 프록시(<code className="rounded bg-surface px-1 font-mono">/api/github</code>)를 거쳐요.</div>
+      </div>
+
+      {/* 데모 미리보기 — 실제 토큰 없이 연결 후 화면을 확인 */}
+      <div className="mt-4 flex items-center justify-between rounded-[10px] border border-dashed border-line px-4 py-2.5">
+        <span className="text-[12px] text-text-tertiary">토큰이 없나요? 연결 후 화면을 데모로 미리 볼 수 있어요.</span>
+        <button type="button" onClick={() => setDemo(true)} className="inline-flex items-center gap-1 rounded-[8px] bg-surface-2 px-2.5 py-1.5 text-[12px] font-semibold text-blue hover:bg-hover"><Icon name="play" className="h-3.5 w-3.5" />연결 후 뷰 미리보기</button>
+      </div>
+    </Card>
+  )
+}
+
+function ConnectedView({ user, demo, navigate, onExit }: { user: { login: string; name: string | null; avatar_url: string } | null; demo: boolean; navigate: (r: string) => void; onExit: () => void }) {
+  return (
+    <Card className="p-6">
+      {demo && (
+        <div className="mb-4 flex items-center gap-2 rounded-[10px] bg-blue-light px-3 py-2.5 text-[12px] font-semibold text-blue">
+          <Icon name="play" className="h-4 w-4 shrink-0" />데모 미리보기 — 실제로는 연결되지 않았어요. 아래 계정·기능은 예시이고, 쓰기·웹훅은 동작하지 않아요.
+        </div>
+      )}
+      <div className="flex items-center gap-3">
+        {user?.avatar_url ? (
+          <img src={user.avatar_url} alt="" className="h-10 w-10 rounded-full" />
+        ) : (
+          <span className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2"><Icon name="github" className="h-5 w-5 text-text-secondary" /></span>
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-[15px] font-bold text-text-primary">{user?.name ?? user?.login ?? "GitHub 계정"}</span>
+            <Badge tone="success">연결됨</Badge>
+            {demo && <Badge tone="blue">데모</Badge>}
+          </div>
+          <div className="text-[13px] text-text-tertiary">{user ? `@${user.login}` : "실제 저장소·이슈·문서를 불러올 수 있어요"}</div>
+        </div>
+        <Button onClick={onExit} icon={<Icon name="github" className="h-4 w-4" />}>{demo ? "데모 종료" : "연결 해제"}</Button>
+      </div>
+
+      {/* 지금 무엇이 켜졌는지 */}
+      <div className="mt-4 grid gap-2 sm:grid-cols-3">
+        <Cap icon="doc" label="자료·이슈 읽기" />
+        <Cap icon="plus" label="이슈·@claude 쓰기" />
+        <Cap icon="sync" label="웹훅 등록" />
+      </div>
+
+      {/* 바로 가기 */}
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button icon={<Icon name="sync" className="h-4 w-4" />} onClick={() => navigate("mirror")}>GitHub 미러 열기</Button>
+        <Button icon={<Icon name="doc" className="h-4 w-4" />} onClick={() => navigate("sources")}>자료 불러오기</Button>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 rounded-[10px] bg-success-light px-4 py-2.5">
+        <Icon name="lock" className="h-4 w-4 text-success" />
+        <span className="text-[12px] font-semibold text-success">토큰은 서버 메모리에만 있어요. 세션이 끝나거나 ‘연결 해제’ 하면 사라져요.</span>
       </div>
     </Card>
   )
