@@ -54,9 +54,40 @@ docker run -p 8443:8443 \
 - **현재: 단일 사용자 PAT** — 서버 메모리에 토큰 1개. 재시작 시 재연결 필요. 내부·개인용 도구면 이대로 충분.
 - **확장: GitHub OAuth App** — 다중 사용자·팀용. 각자 GitHub 로그인 → 서버가 코드 교환·세션 관리. 콜백 URL 등록이 필요하므로 **호스트 확정 후** 진행.
 
-## 호스트 옵션 (택1 · 컨테이너 기반이면 위 Dockerfile 그대로)
+## Fly.io 배포 (권장 · `fly.toml` 준비됨)
 
-- **Fly.io** — `fly launch` → 볼륨 `fly volumes create data`, `fly.toml`에 `[mounts] source="data" destination="/data"`, 시크릿 `fly secrets set GITHUB_WEBHOOK_SECRET=…`. 상시가동 웹훅 수신에 적합.
+`fly.toml` 과 `Dockerfile` 은 이미 리포에 있어요. flyctl 로 그대로 배포돼요.
+
+```bash
+# 0) flyctl 설치 + 로그인 (최초 1회)
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
+# 1) 앱 이름 정하기 (전역 고유) — fly.toml 의 app = "agent-flow" 를 원하는 이름으로 바꾸거나:
+fly apps create <내-앱이름>       # 그리고 fly.toml 의 app 값도 동일하게 수정
+
+# 2) 미러 영속 볼륨 생성 (fly.toml 의 리전과 동일하게)
+fly volumes create data --region nrt --size 1
+
+# 3) 웹훅 시크릿 주입 (fly.toml 에 두지 않아요)
+fly secrets set GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
+#   → 출력된 값을 잘 보관하세요. 나중에 웹훅 등록 시 같은 값을 넣어요.
+
+# 4) 배포 (원격 빌더가 Dockerfile 을 빌드)
+fly deploy
+
+# 5) 확인
+fly open                         # 브라우저로 앱 열기
+curl https://<앱>.fly.dev/api/health   # → {"ok":true}
+```
+
+- `fly.toml` 은 `min_machines_running = 1` 로 **최소 1대 상시가동** → 웹훅 콜드스타트 누락 방지.
+  비용을 줄이려면 `0` 으로 낮출 수 있지만, 정지 상태에서 들어온 웹훅이 깨어나기 전 타임아웃될 수 있어요.
+- 헬스체크는 `/api/health`, 미러는 `/data` 볼륨에 영속.
+- 배포 후 **설정 › 연동**에서 PAT 연결 → **GitHub 미러 › 웹훅 연결**에서 전달 URL `https://<앱>.fly.dev/api/webhook/github` + 3)의 시크릿으로 등록.
+
+## 다른 호스트 (택1 · 컨테이너 기반이면 위 Dockerfile 그대로)
+
 - **Render** — Web Service(Docker), Disk를 `/data`에 마운트, 환경 변수로 시크릿 주입. GitHub 연동 배포 간편.
 - **Cloud Run** — 서버리스. 단, 파일 영속이 어려우니 이 경우 `server/db.mjs`를 외부 DB(예: Cloud SQL/Postgres) DAO로 교체 필요.
 

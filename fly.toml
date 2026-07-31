@@ -1,0 +1,37 @@
+# Fly.io 배포 설정 — Agent Flow (정적 dist + 무의존성 API 서버)
+# 앱 이름은 전역 고유해야 해요. 아래 값을 바꾸거나 `fly launch`가 채우게 하세요.
+app = "agent-flow"
+primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 변경.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8443"
+  MIRROR_DATA_DIR = "/data" # 아래 마운트에 영속돼요.
+  # GITHUB_WEBHOOK_SECRET 은 여기 두지 마세요 — `fly secrets set` 으로 주입.
+
+[http_service]
+  internal_port = 8443
+  force_https = true
+  # 웹훅 수신을 안정적으로 받으려면 최소 1대 상시가동 (콜드스타트 누락 방지).
+  auto_start_machines = true
+  auto_stop_machines = "off"
+  min_machines_running = 1
+
+  [[http_service.checks]]
+    method = "GET"
+    path = "/api/health"
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+
+# 미러 저장소(JSON) 영속 볼륨. 배포 전 생성:
+#   fly volumes create data --region nrt --size 1
+[[mounts]]
+  source = "data"
+  destination = "/data"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb" # 무의존성 node 서버라 충분해요.

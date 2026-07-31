@@ -10,6 +10,8 @@ import { handleMirror } from './mirror.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.join(here, '..', 'dist')
 const PORT = parseInt(process.env.PORT || '8443', 10)
+// 컨테이너/Fly 에서는 0.0.0.0 바인딩이 필요해요. 로컬도 0.0.0.0 이면 문제없어요.
+const HOST = process.env.HOST || '0.0.0.0'
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -72,6 +74,6 @@ const server = http.createServer(async (req, res) => {
   }
 })
 
-server.listen(PORT, () => {
-  console.log(`Agent Flow server → http://localhost:${PORT}  (API: /api/bootstrap)`)
+server.listen(PORT, HOST, () => {
+  console.log(`Agent Flow server → http://${HOST}:${PORT}  (API: /api/bootstrap)`)
 })
