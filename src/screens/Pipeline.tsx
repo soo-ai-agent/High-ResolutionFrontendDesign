@@ -7,13 +7,62 @@ const ACTOR_TONE = {
   human: { bg: "bg-warning-light", fg: "text-[#b47908]", dot: "bg-warning" },
 }
 
+// 실제 동작 판정 — live(실동작) / partial(부분) / mock(목업)
+const REAL_META: Record<string, { label: string; cls: string; dot: string }> = {
+  live: { label: "실동작", cls: "bg-success-light text-success", dot: "bg-success" },
+  partial: { label: "부분", cls: "bg-warning-light text-[#b47908]", dot: "bg-warning" },
+  mock: { label: "목업", cls: "bg-[#eef1f4] text-text-tertiary", dot: "bg-[#8b95a1]" },
+}
+
+function RealChip({ real }: { real: string }) {
+  const m = REAL_META[real] ?? REAL_META.mock
+  return <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold ${m.cls}`}><span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />{m.label}</span>
+}
+
+// 지금 실제로 동작하는 기반(backbone) — Phase 0~2 로 만든 실제 연동
+const LIVE_BACKBONE = [
+  "GitHub 프록시 — 저장소·이슈·문서 읽기, 이슈 생성·@claude 코멘트 쓰기",
+  "웹훅 수신(서명 검증) · 저장소 웹훅 등록 · projects_v2_item 보드 이동 미러",
+  "백필 — 현재 이슈·PR·Actions를 미러에 채우기",
+  "DB 미러 · Projects 보드 · 상단바 실시간 상태",
+  "PAT 연결(서버 보관) · 배포 준비(Dockerfile · fly.toml)",
+]
+
 export default function Pipeline({ navigate }: { navigate: (r: string) => void }) {
+  const counts = PIPELINE_STAGES.reduce((a, s) => ({ ...a, [s.real]: (a[s.real] ?? 0) + 1 }), {} as Record<string, number>)
   return (
     <div className="space-y-6">
       <SectionTitle
         title="진행 흐름"
         desc="프로젝트가 생성되면 아래 순서로 진행돼요. 에이전트 · GitHub Actions · 사람이 각 단계에서 맡은 일을 이어받아요."
       />
+
+      {/* 지금 실제로 동작하는 기반(backbone) */}
+      <Card className="border-success/30 bg-success-light/20 p-5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-success-light text-success"><Icon name="bolt" className="h-4.5 w-4.5" /></span>
+          <div>
+            <div className="flex items-center gap-2"><span className="text-[15px] font-bold text-text-primary">지금 실제로 동작하는 기반</span><Badge tone="success">실동작</Badge></div>
+            <div className="text-[12px] text-text-tertiary">아래 GitHub 연동은 목업이 아니라 서버로 실제 동작해요(연결·배포 시).</div>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 md:grid-cols-2">
+          {LIVE_BACKBONE.map((b) => (
+            <div key={b} className="flex items-start gap-2 text-[13px] text-text-secondary">
+              <Icon name="check" className="mt-0.5 h-4 w-4 shrink-0 text-success" />{b}
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* 판정 범례 + 요약 */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-[12px] bg-surface-2 px-4 py-3 text-[12px] text-text-secondary">
+        <span className="font-bold text-text-primary">단계별 실제 동작 판정</span>
+        <span className="flex items-center gap-1.5"><RealChip real="live" /> 핵심 자동화가 지금 실제로 수행</span>
+        <span className="flex items-center gap-1.5"><RealChip real="partial" /> 일부만 실제(주로 GitHub 연동), 에이전트 미실행</span>
+        <span className="flex items-center gap-1.5"><RealChip real="mock" /> 화면만, 실제 실행 없음</span>
+        <span className="ml-auto text-text-tertiary">실동작 {counts.live ?? 0} · 부분 {counts.partial ?? 0} · 목업 {counts.mock ?? 0}</span>
+      </div>
 
       {/* 세 주체가 각각 하는 일 요약 */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -105,8 +154,10 @@ function StageRow({ s, navigate }: { s: PipelineStage; navigate: (r: string) => 
             <Badge tone="neutral">{s.phase}</Badge>
             <Badge tone={stateTone as any}>{s.state}</Badge>
             <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-tertiary"><Icon name="runs" className="h-3 w-3" />{s.duration}</span>
+            <RealChip real={s.real} />
           </div>
         </button>
+        <div className="mt-2 max-w-[560px] pl-8 text-[11px] leading-relaxed text-text-tertiary">{s.realNote}</div>
       </td>
       {/* 에이전트 */}
       <td className="px-4 py-4">
