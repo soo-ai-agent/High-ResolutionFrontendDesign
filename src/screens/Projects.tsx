@@ -4,6 +4,7 @@ import { PROJECTS, BUILD_PHASES, BUILD_DOMAINS } from "../data"
 
 export default function Projects({ navigate }: { navigate: (r: string) => void }) {
   const [adding, setAdding] = useState(false)
+  const repoTotal = PROJECTS.reduce((n, p) => n + p.repos.length, 0)
   const active = PROJECTS.filter((p) => p.progress < 100).length
   const failing = PROJECTS.reduce((n, p) => n + p.fails, 0)
 
@@ -31,13 +32,13 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
       <div className="mx-auto max-w-[1400px] px-8 py-8">
         <SectionTitle
           title="프로젝트"
-          desc="프로젝트 1개 = 저장소 1개 = 격리 환경. 프로젝트를 선택해 기획부터 배포까지 진행하세요."
+          desc="프로젝트를 선택해 기획부터 배포까지 진행하세요. 한 프로젝트는 여러 깃 저장소를 묶어요."
           action={<Button variant="primary" icon={<Icon name="plus" className="h-4.5 w-4.5" />} onClick={() => setAdding(true)}>프로젝트 추가</Button>}
         />
 
         <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           <SummaryCard label="전체 프로젝트" value={String(PROJECTS.length)} sub={`진행 중 ${active}`} />
-          <SummaryCard label="저장소 (격리 환경)" value={String(PROJECTS.length)} sub="프로젝트당 1개" tone="blue" />
+          <SummaryCard label="연결된 저장소" value={String(repoTotal)} sub="프로젝트 하위" tone="blue" />
           <SummaryCard label="실행 중인 Actions" value="2" sub="Backend · Repair" tone="purple" />
           <SummaryCard label="실패한 Workflow" value={String(failing)} sub="즉시 확인 필요" tone="error" />
         </div>
@@ -61,13 +62,19 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
 
               <p className="mt-2 line-clamp-2 text-[13px] leading-relaxed text-text-secondary">{p.desc}</p>
 
-              {/* 프로젝트 = 저장소 1개 (격리 환경) */}
-              <div className="mt-3 flex flex-wrap items-center gap-1.5">
-                <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-1 text-[11px] font-semibold text-text-secondary">
-                  <Icon name="github" className="h-3.5 w-3.5 text-text-tertiary" /><span className="font-mono">{p.repo}</span>
-                </span>
-                <span className="rounded-full bg-surface-2 px-2 py-1 text-[11px] font-semibold text-text-tertiary">{p.purpose}</span>
-                <span className="rounded-full bg-surface-2 px-2 py-1 text-[11px] font-semibold text-text-tertiary">{p.branch}</span>
+              {/* 이 프로젝트에 속한 깃 저장소들 */}
+              <div className="mt-3">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-text-disabled">
+                  <Icon name="github" className="h-3.5 w-3.5" /> 저장소 {p.repos.length}
+                </div>
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {p.repos.map((r) => (
+                    <span key={r.name} className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-1 text-[11px] font-semibold text-text-secondary">
+                      <span className="font-mono">{r.name}</span>
+                      <span className="text-text-tertiary">· {r.purpose}</span>
+                    </span>
+                  ))}
+                </div>
               </div>
 
               <div className="mt-4 flex items-center gap-2">
@@ -122,22 +129,26 @@ const PHASE_ROLE: Record<string, "auto" | "ai" | "human"> = {
 const REPO_PURPOSES = ["프론트엔드", "백엔드", "인프라", "공용 패키지"]
 const WIZARD_STEPS = ["프로젝트 정보", "저장소 연결", "도메인·단계", "역할·연동", "확인"]
 
-// 프로젝트 추가 위저드 — 정보 → 저장소(1개) → 도메인·단계 → 역할·연동 → 확인.
+// 프로젝트 추가 위저드 — 정보 → 저장소(여러 개) → 도메인·단계 → 역할·연동 → 확인.
 function AddProjectModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState(0)
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
   const [org, setOrg] = useState("sample-org")
-  const [repo, setRepoName] = useState("")
-  const [purpose, setPurpose] = useState("프론트엔드")
+  const [repos, setRepos] = useState([{ name: "", purpose: "프론트엔드" }])
   const [domains, setDomains] = useState<string[]>(["admin", "auth"])
   const [integ, setInteg] = useState({ github: true, supabase: true, slack: false })
 
-  const canNext = step === 0 ? name.trim().length > 0 : step === 1 ? repo.trim().length > 0 : true
+  const canNext = step === 0 ? name.trim().length > 0 : step === 1 ? repos.some((r) => r.name.trim()) : true
   const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1))
   const prev = () => setStep((s) => Math.max(s - 1, 0))
 
+  const setRepo = (i: number, patch: Partial<{ name: string; purpose: string }>) => setRepos((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const addRepo = () => setRepos((rs) => [...rs, { name: "", purpose: "백엔드" }])
+  const removeRepo = (i: number) => setRepos((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs))
   const toggleDomain = (d: string) => setDomains((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : [...ds, d]))
+
+  const validRepos = repos.filter((r) => r.name.trim())
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -180,16 +191,18 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
 
           {step === 1 && (
             <div className="space-y-3">
-              <p className="rounded-[10px] bg-surface-2 px-4 py-2.5 text-[12px] text-text-secondary"><b className="text-text-primary">프로젝트 1개 = 저장소 1개 = 격리 환경</b>이에요. 이 저장소가 이슈·PR·Actions·CLAUDE.md 를 담아요.</p>
-              <Field label="저장소 (owner/repo)">
-                <div className="flex items-center gap-2">
+              <p className="rounded-[10px] bg-surface-2 px-4 py-2.5 text-[12px] text-text-secondary">한 프로젝트는 <b className="text-text-primary">여러 깃 저장소</b>를 묶어요. 프론트·백엔드·인프라처럼 역할별로 저장소를 나눠 연결하세요.</p>
+              {repos.map((r, i) => (
+                <div key={i} className="flex items-center gap-2">
                   <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-4.5 w-4.5 text-text-secondary" /></span>
-                  <input value={repo} onChange={(e) => setRepoName(e.target.value)} placeholder="예: sample-org/admin-web" className="h-10 flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
-                  <select value={purpose} onChange={(e) => setPurpose(e.target.value)} className="h-10 rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
-                    {REPO_PURPOSES.map((pp) => <option key={pp} value={pp}>{pp}</option>)}
+                  <input value={r.name} onChange={(e) => setRepo(i, { name: e.target.value })} placeholder="저장소 이름 (예: admin-web)" className="h-10 flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
+                  <select value={r.purpose} onChange={(e) => setRepo(i, { purpose: e.target.value })} className="h-10 rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
+                    {REPO_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
                   </select>
+                  <button onClick={() => removeRepo(i)} disabled={repos.length === 1} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-text-tertiary hover:bg-hover disabled:opacity-30" aria-label="삭제"><Icon name="close" className="h-4 w-4" /></button>
                 </div>
-              </Field>
+              ))}
+              <button onClick={addRepo} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-text-secondary hover:bg-hover"><Icon name="plus" className="h-4 w-4" />저장소 추가</button>
             </div>
           )}
 
@@ -242,7 +255,7 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
                 {desc && <p className="mt-1 text-[13px] text-text-secondary">{desc}</p>}
                 <div className="mt-3 divide-y divide-line">
                   <SumRow label="조직" value={org} />
-                  <SumRow label="저장소 (격리 환경)" value={repo ? `${repo} · ${purpose}` : "없음"} />
+                  <SumRow label="저장소" value={validRepos.length ? validRepos.map((r) => r.name).join(", ") : "없음"} />
                   <SumRow label="도메인" value={domains.length ? domains.join(", ") : "없음"} />
                   <SumRow label="연동" value={[integ.github && "GitHub", integ.supabase && "Supabase", integ.slack && "Slack"].filter(Boolean).join(", ")} />
                 </div>

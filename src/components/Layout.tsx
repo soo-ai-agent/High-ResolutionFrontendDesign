@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from "react"
 import { Icon, IconButton, Badge, RoleChip, SyncMark } from "./ui"
-import { REPO, PHASES, PROJECT } from "../data"
+import { REPO, PHASES, PROJECT, PROJECT_REPOS } from "../data"
 
 const MENU = [
   { group: "기획", items: [
@@ -23,6 +23,7 @@ const MENU = [
     { key: "runs", label: "Actions 실행", icon: "runs" },
     { key: "tests", label: "테스트", icon: "test" },
     { key: "mirror", label: "GitHub 미러", icon: "sync" },
+    { key: "projects-board", label: "Projects 보드", icon: "board" },
   ] },
   { group: "운영", items: [
     { key: "human-tasks", label: "휴먼태스크", icon: "hand" },
@@ -49,6 +50,7 @@ export default function Layout({ route, navigate, children }: { route: string; n
 }
 
 function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: () => void }) {
+  const [repoOpen, setRepoOpen] = useState(false)
   return (
     <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
       <button onClick={onMenu} className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary hover:bg-hover lg:hidden" aria-label="메뉴">
@@ -61,18 +63,38 @@ function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: (
         <span className="text-[17px] font-bold tracking-tight text-text-primary">Agent Flow</span>
       </button>
 
-      {/* Project scope: 프로젝트 1개 = 저장소 1개 (격리 환경) */}
+      {/* Project + repository scope: one project, many repos */}
       <div className="ml-2 flex items-center gap-2">
         <div className="hidden items-center gap-2 rounded-[10px] bg-surface-2 px-3 py-2 sm:flex">
           <Icon name="board" className="h-4 w-4 text-text-tertiary" />
           <span className="text-[14px] font-bold text-text-primary">{PROJECT.name}</span>
           <span className="rounded-full bg-blue-light px-1.5 py-0.5 text-[11px] font-bold text-blue">프로젝트</span>
         </div>
-        <button onClick={() => navigate("overview")} className="hidden h-10 items-center gap-2 rounded-[10px] border border-line px-3.5 hover:bg-hover md:flex">
-          <Icon name="github" className="h-4 w-4 text-text-secondary" />
-          <span className="font-mono text-[13px] font-semibold text-text-primary">{PROJECT.repo}</span>
-          <span className="rounded-full bg-surface-2 px-1.5 py-0.5 text-[11px] font-semibold text-text-tertiary">격리 환경</span>
-        </button>
+        <div className="relative">
+          <button onClick={() => setRepoOpen((o) => !o)} className="flex h-10 items-center gap-2 rounded-[10px] border border-line px-3.5 hover:bg-hover">
+            <Icon name="github" className="h-4 w-4 text-text-secondary" />
+            <span className="text-[13px] font-semibold text-text-primary">저장소 {PROJECT_REPOS.length}개</span>
+            <Icon name="chevronDown" className="h-4 w-4 text-text-tertiary" />
+          </button>
+          {repoOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setRepoOpen(false)} />
+              <div className="af-fade absolute left-0 top-12 z-40 w-72 rounded-[14px] border border-line bg-surface p-2 shadow-[var(--shadow-modal)]">
+                <div className="px-2 py-1.5 text-[11px] font-bold uppercase tracking-wide text-text-disabled">프로젝트 저장소</div>
+                {PROJECT_REPOS.map((r) => (
+                  <button key={r.full} onClick={() => { setRepoOpen(false); navigate("overview") }} className="flex w-full items-center gap-2 rounded-[10px] px-2 py-2.5 text-left hover:bg-hover">
+                    <Icon name="github" className="h-4 w-4 text-text-tertiary" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-[13px] font-semibold text-text-primary">{r.full}</div>
+                      <div className="text-[11px] text-text-tertiary">{r.purpose} · {r.branch}</div>
+                    </div>
+                    <span className="text-[12px] font-bold text-blue">{r.progress}%</span>
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <div className="ml-auto flex items-center gap-3">

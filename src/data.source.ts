@@ -11,23 +11,28 @@ export const REPO = {
   phase: "구현",
 }
 
-// 프로젝트 1개 = 저장소 1개 = 격리 환경.
-// 프로젝트가 곧 하나의 GitHub 저장소이고, 그 저장소가 이슈·PR·Actions·CLAUDE.md 를
-// 담는 격리된 실행 환경이에요. 기획 산출물(자료/PRD/IA)도 이 저장소 안에서 관리돼요.
+// One project spans multiple git repositories. Planning artifacts (자료/PRD/IA)
+// live at the project level; implementation happens per repository.
 export const PROJECT = {
-  name: "커머스 어드민 웹",
+  name: "커머스 어드민 리뉴얼",
   org: "sample-org",
-  desc: "회원·콘텐츠 관리자 웹을 격리된 저장소 하나에서 기획부터 배포까지 개발하는 프로젝트",
-  progress: 71,
+  desc: "회원·콘텐츠 관리를 아우르는 관리자 도구를 프론트·백엔드·인프라 저장소로 나눠 개발하는 프로젝트",
+  progress: 62,
   stage: "구현",
-  repo: "sample-org/admin-web",
-  purpose: "프론트엔드",
-  branch: "main",
 }
 
 export type Role = "human" | "ai" | "both" | "auto"
 
-// 최상위 분류는 '프로젝트'이고, 프로젝트 1개 = 저장소 1개예요(격리 환경).
+// Repositories that belong to the single project.
+export const PROJECT_REPOS = [
+  { full: "sample-org / admin-web", purpose: "프론트엔드", branch: "main", progress: 71, tasks: 7, prs: 2, fails: 0, synced: true },
+  { full: "sample-org / admin-api", purpose: "백엔드", branch: "main", progress: 58, tasks: 12, prs: 3, fails: 1, synced: true },
+  { full: "sample-org / admin-infra", purpose: "인프라", branch: "main", progress: 40, tasks: 4, prs: 1, fails: 0, synced: false },
+]
+
+// 최상위 분류는 '프로젝트'예요. 하나의 프로젝트가 여러 깃 저장소를 묶어요.
+// (진입 화면은 저장소가 아니라 이 프로젝트 목록을 보여줘요.)
+export type ProjectRepo = { name: string; purpose: string }
 export type ProjectItem = {
   id: string
   name: string
@@ -35,9 +40,7 @@ export type ProjectItem = {
   desc: string
   stage: string
   progress: number
-  repo: string // owner/name — 프로젝트 = 저장소 1개 (격리 환경)
-  purpose: string // 프론트엔드 / 백엔드 / 인프라 / 공용 패키지
-  branch: string
+  repos: ProjectRepo[]
   tasks: number
   prs: number
   fails: number
@@ -46,11 +49,58 @@ export type ProjectItem = {
 }
 
 export const PROJECTS: ProjectItem[] = [
-  { id: "P-01", name: "커머스 어드민 웹", org: "sample-org", desc: "회원·콘텐츠 관리자 웹 (프론트엔드)", stage: "구현", progress: 71, repo: "sample-org/admin-web", purpose: "프론트엔드", branch: "main", tasks: 7, prs: 2, fails: 0, updated: "3분 전", synced: true },
-  { id: "P-02", name: "커머스 어드민 API", org: "sample-org", desc: "회원·콘텐츠 관리 백엔드 API", stage: "검증", progress: 58, repo: "sample-org/admin-api", purpose: "백엔드", branch: "main", tasks: 12, prs: 3, fails: 1, updated: "12분 전", synced: true },
-  { id: "P-03", name: "결제 코어", org: "sample-org", desc: "결제 처리·정산 백엔드", stage: "검증", progress: 82, repo: "sample-org/payments-core", purpose: "백엔드", branch: "main", tasks: 6, prs: 2, fails: 0, updated: "1시간 전", synced: true },
-  { id: "P-04", name: "알림 서비스", org: "sample-org", desc: "이메일·푸시·인앱 알림 백엔드", stage: "작업 생성", progress: 34, repo: "sample-org/notify-service", purpose: "백엔드", branch: "develop", tasks: 21, prs: 1, fails: 2, updated: "2일 전", synced: false },
-  { id: "P-05", name: "디자인 토큰", org: "sample-org", desc: "공용 디자인 토큰·컴포넌트 패키지", stage: "릴리스", progress: 100, repo: "sample-org/design-tokens", purpose: "공용 패키지", branch: "main", tasks: 0, prs: 0, fails: 0, updated: "어제", synced: true },
+  {
+    id: "P-01",
+    name: "커머스 어드민 리뉴얼",
+    org: "sample-org",
+    desc: "회원·콘텐츠 관리를 아우르는 관리자 도구를 프론트·백엔드·인프라 저장소로 나눠 개발하는 프로젝트",
+    stage: "구현",
+    progress: 62,
+    repos: [
+      { name: "admin-web", purpose: "프론트엔드" },
+      { name: "admin-api", purpose: "백엔드" },
+      { name: "admin-infra", purpose: "인프라" },
+    ],
+    tasks: 23, prs: 6, fails: 1, updated: "3분 전", synced: true,
+  },
+  {
+    id: "P-02",
+    name: "결제 플랫폼 고도화",
+    org: "sample-org",
+    desc: "결제 코어와 결제 웹을 분리해 안정성과 확장성을 높이는 프로젝트",
+    stage: "검증",
+    progress: 82,
+    repos: [
+      { name: "payments-core", purpose: "백엔드" },
+      { name: "payments-web", purpose: "프론트엔드" },
+    ],
+    tasks: 8, prs: 2, fails: 0, updated: "1시간 전", synced: true,
+  },
+  {
+    id: "P-03",
+    name: "알림 서비스 신규 구축",
+    org: "sample-org",
+    desc: "이메일·푸시·인앱 알림을 통합 관리하는 신규 서비스",
+    stage: "작업 생성",
+    progress: 34,
+    repos: [
+      { name: "notify-service", purpose: "백엔드" },
+      { name: "notify-web", purpose: "프론트엔드" },
+    ],
+    tasks: 21, prs: 1, fails: 2, updated: "2일 전", synced: false,
+  },
+  {
+    id: "P-04",
+    name: "디자인 시스템 배포",
+    org: "sample-org",
+    desc: "공용 디자인 토큰과 컴포넌트를 패키지로 배포하는 프로젝트",
+    stage: "릴리스",
+    progress: 100,
+    repos: [
+      { name: "design-tokens", purpose: "공용 패키지" },
+    ],
+    tasks: 0, prs: 0, fails: 0, updated: "어제", synced: true,
+  },
 ]
 
 export type Phase = {

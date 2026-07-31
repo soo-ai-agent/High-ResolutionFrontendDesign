@@ -1,5 +1,5 @@
 import { Icon, Button, Badge, Card, SummaryCard, Progress, RoleChip, SyncMark, toneFor } from "../components/ui"
-import { REPO, OVERVIEW_SUMMARY, PIPELINE, RECENT_RUNS, CHECKLIST, PROJECT, PLANNING_FLOW } from "../data"
+import { REPO, OVERVIEW_SUMMARY, PIPELINE, RECENT_RUNS, CHECKLIST, PROJECT, PROJECT_REPOS, PLANNING_FLOW } from "../data"
 
 export default function Overview({ navigate }: { navigate: (r: string) => void }) {
   return (
@@ -14,7 +14,7 @@ export default function Overview({ navigate }: { navigate: (r: string) => void }
             <SyncMark synced />
           </div>
           <p className="mt-2 text-[14px] text-text-secondary">{PROJECT.desc}</p>
-          <div className="mt-1 flex items-center gap-1.5 font-mono text-[12px] text-text-tertiary"><Icon name="github" className="h-3.5 w-3.5" />{PROJECT.repo} · {PROJECT.org} · 격리 환경</div>
+          <div className="mt-1 text-[12px] text-text-tertiary">저장소 {PROJECT_REPOS.length}개 · {PROJECT.org}</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button icon={<Icon name="external" className="h-4 w-4" />}>GitHub에서 열기</Button>
@@ -68,24 +68,28 @@ export default function Overview({ navigate }: { navigate: (r: string) => void }
         </div>
       </Card>
 
-      {/* 저장소 · 격리 환경 (프로젝트 1개 = 저장소 1개) */}
+      {/* Project repositories */}
       <Card className="p-6">
         <div className="flex items-center justify-between">
-          <h2 className="text-[16px] font-bold">저장소 · 격리 환경</h2>
-          <span className="text-[12px] text-text-tertiary">프로젝트 1개 = 저장소 1개 · 이슈·PR·Actions·CLAUDE.md 를 담아요</span>
+          <h2 className="text-[16px] font-bold">프로젝트 저장소</h2>
+          <span className="text-[12px] text-text-tertiary">기획 산출물은 프로젝트 공통 · 구현은 저장소별로 진행돼요</span>
         </div>
-        <button onClick={() => navigate("mirror")} className="mt-4 flex w-full items-center gap-4 rounded-[12px] border border-line p-4 text-left transition-colors hover:bg-hover">
-          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[12px] bg-surface-2"><Icon name="github" className="h-5 w-5 text-text-secondary" /></span>
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="font-mono text-[14px] font-bold text-text-primary">{PROJECT.repo}</span>
-              <Badge tone="neutral">{PROJECT.purpose}</Badge>
-              <span className="text-[12px] text-text-tertiary">{PROJECT.branch}</span>
-            </div>
-            <div className="mt-2 flex items-center gap-2"><Progress value={PROJECT.progress} /><span className="text-[12px] font-bold text-text-secondary">{PROJECT.progress}%</span></div>
-          </div>
-          <Icon name="chevron" className="h-4 w-4 shrink-0 text-text-tertiary" />
-        </button>
+        <div className="mt-4 grid gap-3 md:grid-cols-3">
+          {PROJECT_REPOS.map((r) => (
+            <button key={r.full} onClick={() => navigate("tasks")} className="rounded-[12px] border border-line p-4 text-left transition-colors hover:bg-hover">
+              <div className="flex items-center justify-between">
+                <span className="flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="github" className="h-4 w-4 text-text-tertiary" />{r.full.split(" / ")[1]}</span>
+                <Badge tone="neutral">{r.purpose}</Badge>
+              </div>
+              <div className="mt-3 flex items-center gap-2"><Progress value={r.progress} tone={r.fails > 0 ? "warning" : "blue"} /><span className="text-[12px] font-bold text-text-secondary">{r.progress}%</span></div>
+              <div className="mt-3 flex items-center gap-3 text-[12px] text-text-tertiary">
+                <span>작업 {r.tasks}</span><span>PR {r.prs}</span>
+                {r.fails > 0 ? <span className="text-error">실패 {r.fails}</span> : <span className="text-success">실패 0</span>}
+                <span className="ml-auto">{r.synced ? "동기화됨" : "동기화 필요"}</span>
+              </div>
+            </button>
+          ))}
+        </div>
       </Card>
 
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">

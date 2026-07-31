@@ -1,0 +1,94 @@
+name: kanban
+
+# GitHub Projects(v2) 보드 자동화 — 이슈·PR을 보드에 자동으로 추가하고, 상태를 자동 이동해요.
+# 다이어그램: "GitHub → Projects 보드 이벤트 자동 이동 (auto-add · kanban.yml)". 보드는 뷰 전용이라
+# 사람이 카드를 옮기지 않아요. 이벤트가 카드를 움직입니다.
+#
+# 설정 (프로젝트 = 여러 저장소일 때, 각 저장소에 이 워크플로를 넣고 같은 PROJECT_URL 을 가리키면
+#       하나의 보드로 집계돼요):
+#   - Repository Variables:  PROJECT_URL = https://github.com/orgs/<org>/projects/<n>
+#   - Repository Secrets:    GH_PROJECT_TOKEN = Projects 쓰기 권한 PAT (또는 GitHub App 토큰)
+#   - (선택) Variables:      STATUS_FIELD = Status   # 기본값 "Status"
+# PROJECT_URL 이 비어 있으면 모든 잡이 스킵돼요(안전).
+
+on:
+  issues:
+    types: [opened, reopened, closed]
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+
+permissions:
+  contents: read
+
+jobs:
+  auto-add:
+    if: ${{ vars.PROJECT_URL != '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: 보드에 자동 추가 (auto-add)
+        uses: actions/add-to-project@v1.0.2
+        with:
+          project-url: ${{ vars.PROJECT_URL }}
+          github-token: ${{ secrets.GH_PROJECT_TOKEN }}
+
+  auto-move:
+    if: ${{ vars.PROJECT_URL != '' }}
+    needs: auto-add
+    runs-on: ubuntu-latest
+    steps:
+      - name: 상태 자동 이동 (Todo / In Progress / In Review / Done)
+        uses: actions/github-script@v7
+        env:
+          PROJECT_URL: ${{ vars.PROJECT_URL }}
+          STATUS_FIELD: ${{ vars.STATUS_FIELD || 'Status' }}
+        with:
+          github-token: ${{ secrets.GH_PROJECT_TOKEN }}
+          script: |
+            const action = context.payload.action
+            const isPR = !!context.payload.pull_request
+            const node = isPR ? context.payload.pull_request : context.payload.issue
+
+            // 이벤트 → 목표 상태
+            let target
+            if (action === 'closed') target = 'Done'
+            else if (isPR) target = 'In Review'          // opened / reopened / ready_for_review
+            else target = (action === 'opened') ? 'Todo' : 'In Progress'
+            core.info(`event=${context.eventName}/${action} → status=${target}`)
+
+            // PROJECT_URL 파싱: /orgs|users/<login>/projects/<number>
+            const m = process.env.PROJECT_URL.match(/\/(orgs|users)\/([^/]+)\/projects\/(\d+)/)
+            if (!m) { core.setFailed('PROJECT_URL 형식이 올바르지 않아요.'); return }
+            const [, kind, login, number] = m
+            const scope = kind === 'orgs' ? 'organization' : 'user'
+
+            // 프로젝트 id + Status 필드(옵션) 조회
+            const projQ = `query($login:String!,$n:Int!){
+              ${scope}(login:$login){ projectV2(number:$n){
+                id
+                field(name:"${process.env.STATUS_FIELD}"){
+                  ... on ProjectV2SingleSelectField { id options { id name } }
+                }
+              } }
+            }`
+            const pr = await github.graphql(projQ, { login, n: Number(number) })
+            const project = pr[scope].projectV2
+            const field = project && project.field
+            if (!project || !field) { core.warning('프로젝트 또는 Status 필드를 찾지 못했어요.'); return }
+            const option = field.options.find((o) => o.name.toLowerCase() === target.toLowerCase())
+            if (!option) { core.warning(`Status 옵션 '${target}' 이(가) 없어요.`); return }
+
+            // 이 이슈/PR 의 보드 아이템 id 조회
+            const itemQ = `query($id:ID!){ node(id:$id){
+              ... on Issue { projectItems(first:20){ nodes { id project { id } } } }
+              ... on PullRequest { projectItems(first:20){ nodes { id project { id } } } }
+            } }`
+            const nres = await github.graphql(itemQ, { id: node.node_id })
+            const items = ((nres.node && nres.node.projectItems.nodes) || []).filter((it) => it.project.id === project.id)
+
+            const mutation = `mutation($p:ID!,$i:ID!,$f:ID!,$o:String!){
+              updateProjectV2ItemFieldValue(input:{ projectId:$p, itemId:$i, fieldId:$f, value:{ singleSelectOptionId:$o } }){ projectV2Item { id } }
+            }`
+            for (const it of items) {
+              await github.graphql(mutation, { p: project.id, i: it.id, f: field.id, o: option.id })
+              core.info(`moved item ${it.id} → ${target}`)
+            }

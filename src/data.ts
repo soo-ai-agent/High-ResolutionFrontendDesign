@@ -10,6 +10,7 @@ import type * as S from "./data.source"
 // 타입은 서버 소스에서 그대로 재-export 해요.
 export type {
   Role,
+  ProjectRepo,
   ProjectItem,
   Phase,
   TddPhase,
@@ -29,6 +30,7 @@ export const PROJECT: any = {}
 export const INTERVIEW_BACKLOG: any = {}
 export const INTERVIEW_SPEC: { title: string; api: string; fields: { k: string; v: string }[]; acceptance: string[] } = { title: "", api: "", fields: [], acceptance: [] }
 
+export const PROJECT_REPOS: any[] = []
 export const PROJECTS: S.ProjectItem[] = []
 export const PHASES: S.Phase[] = []
 export const PLANNING_FLOW: any[] = []
@@ -83,6 +85,7 @@ export function hydrateData(d: Record<string, any> | null | undefined) {
   fill(PROJECT, d.PROJECT)
   fill(INTERVIEW_BACKLOG, d.INTERVIEW_BACKLOG)
   fill(INTERVIEW_SPEC, d.INTERVIEW_SPEC)
+  fill(PROJECT_REPOS, d.PROJECT_REPOS)
   fill(PROJECTS, d.PROJECTS)
   fill(PHASES, d.PHASES)
   fill(PLANNING_FLOW, d.PLANNING_FLOW)
