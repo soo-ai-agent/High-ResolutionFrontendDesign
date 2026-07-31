@@ -31,7 +31,7 @@ const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   "projects-board": () => <Board />,
   "human-tasks": () => <HumanTasks />,
   releases: () => <Releases />,
-  settings: () => <Settings />,
+  settings: (nav) => <Settings navigate={nav} />,
 }
 
 export default function App() {

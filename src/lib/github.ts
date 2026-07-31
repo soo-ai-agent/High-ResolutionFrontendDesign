@@ -34,6 +34,8 @@ function subscribe(l: () => void) {
 
 let connectedSnapshot = false
 let userSnapshot: GHUser | null = null
+// 첫 상태 조회가 끝나기 전엔 true — "연결 필요"가 잠깐 깜빡이는 걸 막아요.
+let checkingSnapshot = true
 
 function messageFor(status: number): string {
   if (status === 401) return "토큰이 유효하지 않아요. 다시 확인해 주세요."
@@ -70,6 +72,10 @@ export function isConnected(): boolean {
   return connectedSnapshot
 }
 
+export function isChecking(): boolean {
+  return checkingSnapshot
+}
+
 // ---- 연결 / 해제 ----
 export async function connect(token: string): Promise<GHUser> {
   const trimmed = token.trim()
@@ -101,13 +107,16 @@ export async function disconnect(): Promise<void> {
 async function refreshStatus() {
   try {
     const res = await fetch(BASE + "/status", { headers: { Accept: "application/json" } })
-    if (!res.ok) return
-    const j = (await res.json()) as { connected: boolean; user: GHUser | null }
-    connectedSnapshot = !!j.connected
-    userSnapshot = j.user ?? null
-    emit()
+    if (res.ok) {
+      const j = (await res.json()) as { connected: boolean; user: GHUser | null }
+      connectedSnapshot = !!j.connected
+      userSnapshot = j.user ?? null
+    }
   } catch {
     // 조용히 무시 — 연결 상태는 다음 요청에서 갱신돼요.
+  } finally {
+    checkingSnapshot = false
+    emit()
   }
 }
 
@@ -173,8 +182,9 @@ export async function pingHook(owner: string, repo: string, id: number): Promise
 // ---- React 훅 ----
 export function useGitHub() {
   const connected = useSyncExternalStore(subscribe, isConnected, () => false)
+  const checking = useSyncExternalStore(subscribe, isChecking, () => false)
   const user = useSyncExternalStore(subscribe, () => userSnapshot, () => null)
-  return { connected, user, connect, disconnect }
+  return { connected, checking, user, connect, disconnect }
 }
 
 // 모듈 로드 시 서버 연결 상태 조회

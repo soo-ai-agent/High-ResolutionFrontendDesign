@@ -5,11 +5,19 @@ import { HUMAN_TASKS, RELEASES, AGENTS, AUTOMATION, type HumanTask, type Externa
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
 
-function GitHubConnect() {
-  const { connected, user, connect, disconnect } = useGitHub()
+const TOKEN_RE = /^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)/
+// 프록시 쓰기(repo)·웹훅 등록(admin:repo_hook)·Actions 조회(workflow) 권한을 미리 담아요.
+const NEW_TOKEN_URL = "https://github.com/settings/tokens/new?scopes=repo,admin:repo_hook,workflow&description=Agent%20Flow"
+
+function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
+  const { connected, checking, user, connect, disconnect } = useGitHub()
   const [token, setToken] = useState("")
+  const [show, setShow] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+
+  const trimmed = token.trim()
+  const looksInvalid = trimmed.length > 0 && !TOKEN_RE.test(trimmed)
 
   const onConnect = async () => {
     setErr("")
@@ -17,11 +25,24 @@ function GitHubConnect() {
     try {
       await connect(token)
       setToken("") // 입력한 토큰은 즉시 비워요 — 화면에 다시 표시하지 않아요.
+      setShow(false)
     } catch (e) {
       setErr(e instanceof GitHubError ? e.message : "연결에 실패했어요.")
     } finally {
       setBusy(false)
     }
+  }
+
+  // 첫 상태 조회 중 — "연결 필요"가 잠깐 깜빡이는 걸 막아요.
+  if (checking && !connected) {
+    return (
+      <Card className="p-6">
+        <div className="flex items-center gap-3">
+          <span className="af-spin h-5 w-5 rounded-full border-2 border-line-strong border-t-blue" />
+          <span className="text-[14px] font-semibold text-text-secondary">GitHub 연결 상태를 확인하는 중…</span>
+        </div>
+      </Card>
+    )
   }
 
   if (connected) {
@@ -42,9 +63,23 @@ function GitHubConnect() {
           </div>
           <Button onClick={disconnect} icon={<Icon name="github" className="h-4 w-4" />}>연결 해제</Button>
         </div>
+
+        {/* 지금 무엇이 켜졌는지 */}
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <Cap icon="doc" label="자료·이슈 읽기" />
+          <Cap icon="plus" label="이슈·@claude 쓰기" />
+          <Cap icon="sync" label="웹훅 등록" />
+        </div>
+
+        {/* 바로 가기 */}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button icon={<Icon name="sync" className="h-4 w-4" />} onClick={() => navigate("mirror")}>GitHub 미러 열기</Button>
+          <Button icon={<Icon name="doc" className="h-4 w-4" />} onClick={() => navigate("sources")}>자료 불러오기</Button>
+        </div>
+
         <div className="mt-4 flex items-center gap-2 rounded-[10px] bg-success-light px-4 py-2.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-          <span className="text-[12px] font-semibold text-success">기획 단계의 GitHub Issue·저장소 문서 가져오기가 실제 API로 동작해요.</span>
+          <Icon name="lock" className="h-4 w-4 text-success" />
+          <span className="text-[12px] font-semibold text-success">토큰은 서버 메모리에만 있어요. 세션이 끝나거나 ‘연결 해제’ 하면 사라져요.</span>
         </div>
       </Card>
     )
@@ -52,34 +87,59 @@ function GitHubConnect() {
 
   return (
     <Card className="p-6">
-      <div className="flex items-center gap-2">
-        <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-5 w-5 text-text-secondary" /></span>
-        <div>
-          <div className="text-[15px] font-bold text-text-primary">GitHub 연결</div>
-          <div className="text-[12px] text-text-tertiary">Personal Access Token으로 실제 저장소에 연결해요.</div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <span className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-5 w-5 text-text-secondary" /></span>
+          <div>
+            <div className="text-[15px] font-bold text-text-primary">GitHub 연결</div>
+            <div className="text-[12px] text-text-tertiary">Personal Access Token으로 실제 저장소에 연결해요.</div>
+          </div>
         </div>
+        <a href={NEW_TOKEN_URL} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-[10px] border border-line px-3 py-2 text-[12px] font-semibold text-blue hover:bg-hover"><Icon name="external" className="h-3.5 w-3.5" />토큰 만들기</a>
       </div>
+
       <label className="mt-5 mb-1.5 block text-[13px] font-bold text-text-primary">Personal Access Token</label>
       <div className="flex gap-2">
-        <input
-          type="password"
-          value={token}
-          onChange={(e) => setToken(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && !busy && onConnect()}
-          placeholder="ghp_... 또는 github_pat_..."
-          autoComplete="off"
-          className="h-11 flex-1 rounded-[10px] border border-line bg-surface px-3.5 font-mono text-[14px] outline-none focus:border-blue"
-        />
-        <Button variant="primary" onClick={onConnect} loading={busy} disabled={!token.trim()}>연결</Button>
+        <div className="relative flex-1">
+          <input
+            type={show ? "text" : "password"}
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && !busy && trimmed && onConnect()}
+            placeholder="ghp_... 또는 github_pat_..."
+            autoComplete="off"
+            spellCheck={false}
+            className="h-11 w-full rounded-[10px] border border-line bg-surface pl-3.5 pr-16 font-mono text-[14px] outline-none focus:border-blue"
+          />
+          {trimmed && (
+            <button type="button" onClick={() => setShow((s) => !s)} className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-[8px] px-2 py-1 text-[12px] font-semibold text-text-tertiary hover:bg-hover">{show ? "숨김" : "표시"}</button>
+          )}
+        </div>
+        <Button variant="primary" onClick={onConnect} loading={busy} disabled={!trimmed}>연결</Button>
       </div>
+
+      {looksInvalid && !err && (
+        <div className="mt-2 text-[12px] font-medium text-[#b47908]">토큰 형식이 다른 것 같아요 — 클래식은 <code className="font-mono">ghp_</code>, 파인그레인드는 <code className="font-mono">github_pat_</code>로 시작해요.</div>
+      )}
       {err && <div className="mt-2 rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{err}</div>}
+
       <div className="mt-4 space-y-1.5 rounded-[10px] bg-surface-2 p-3.5 text-[12px] text-text-secondary">
         <div className="font-bold text-text-primary">권한 안내</div>
-        <div>· 공개 저장소만 사용한다면 <code className="rounded bg-surface px-1 font-mono">public_repo</code>, 비공개 저장소까지 쓰려면 <code className="rounded bg-surface px-1 font-mono">repo</code> 권한을 선택하세요.</div>
+        <div>· 저장소 읽기·이슈/코멘트 쓰기: <code className="rounded bg-surface px-1 font-mono">repo</code> (공개 저장소만이면 <code className="rounded bg-surface px-1 font-mono">public_repo</code>).</div>
+        <div>· 웹훅 등록까지 하려면 <code className="rounded bg-surface px-1 font-mono">admin:repo_hook</code>, Actions 조회는 <code className="rounded bg-surface px-1 font-mono">workflow</code>를 함께 선택하세요. (위 ‘토큰 만들기’에 미리 담겨 있어요.)</div>
         <div>· 토큰은 서버로 전송돼 세션 동안 서버 메모리에만 보관되고, 브라우저·화면에는 저장·표시되지 않아요.</div>
-        <div>· GitHub 요청은 모두 서버 프록시(<code className="rounded bg-surface px-1 font-mono">/api/github</code>)를 거쳐요. 이후 서버 측 OAuth로 확장할 수 있어요.</div>
+        <div>· GitHub 요청은 모두 서버 프록시(<code className="rounded bg-surface px-1 font-mono">/api/github</code>)를 거쳐요.</div>
       </div>
     </Card>
+  )
+}
+
+function Cap({ icon, label }: { icon: string; label: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-[10px] border border-line bg-surface px-3 py-2">
+      <span className="flex h-6 w-6 items-center justify-center rounded-[8px] bg-success-light text-success"><Icon name={icon} className="h-3.5 w-3.5" /></span>
+      <span className="text-[12px] font-semibold text-text-secondary">{label}</span>
+    </div>
   )
 }
 
@@ -317,7 +377,7 @@ export function Releases() {
 }
 
 // ============ SETTINGS ============
-export function Settings() {
+export function Settings({ navigate }: { navigate: (r: string) => void }) {
   const [menu, setMenu] = useState("연동")
   const [autos, setAutos] = useState(AUTOMATION.map((a) => a.on))
   const [confirm, setConfirm] = useState<number | null>(null)
@@ -332,7 +392,7 @@ export function Settings() {
 
       <div className="space-y-5">
         <SectionTitle title={`${menu} 설정`} />
-        {menu === "연동" && <GitHubConnect />}
+        {menu === "연동" && <GitHubConnect navigate={navigate} />}
         {menu === "명령어" && (
           <Card className="divide-y divide-line p-6">
             {[["Install Command", "pnpm install"], ["Lint Command", "pnpm lint"], ["Type Check Command", "pnpm typecheck"], ["Unit Test Command", "pnpm test"], ["Integration Test Command", "pnpm test:int"], ["Build Command", "pnpm build"]].map(([n, v]) => (
