@@ -3,6 +3,7 @@ import Layout from "./components/Layout"
 import Login from "./screens/Login"
 import Repositories from "./screens/Repositories"
 import Overview from "./screens/Overview"
+import Interview from "./screens/Interview"
 import { Sources, PRD, Critic, IA, ScreenList, ScreenDetail, Flow, DesignSystem } from "./screens/Design"
 import { Tasks, PullRequests, Runs, Tests } from "./screens/Dev"
 import { ManualTasks, Releases, Settings } from "./screens/Ops"
@@ -10,6 +11,7 @@ import { ManualTasks, Releases, Settings } from "./screens/Ops"
 const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   overview: (nav) => <Overview navigate={nav} />,
   sources: (nav) => <Sources navigate={nav} />,
+  interview: (nav) => <Interview navigate={nav} />,
   prd: (nav) => <PRD navigate={nav} />,
   critic: (nav) => <Critic navigate={nav} />,
   ia: (nav) => <IA navigate={nav} />,

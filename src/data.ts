@@ -41,6 +41,7 @@ export type Phase = {
 export const PHASES: Phase[] = [
   { key: "overview", label: "개요", status: "완료", owner: "human", ownerNote: "사람이 현황을 확인해요" },
   { key: "sources", label: "자료", status: "완료", owner: "both", ownerNote: "사람이 등록 · AI가 분석" },
+  { key: "interview", label: "요구사항 인터뷰", status: "완료", owner: "both", ownerNote: "AI가 질문 · 사람이 결정" },
   { key: "prd", label: "PRD", status: "완료", owner: "both", ownerNote: "AI가 초안 · 사람이 승인" },
   { key: "ia", label: "IA·디자인", status: "완료", owner: "ai", ownerNote: "AI가 설계" },
   { key: "tasks", label: "작업 생성", status: "완료", owner: "ai", ownerNote: "AI가 작업 분해" },
@@ -55,7 +56,8 @@ export const PHASES: Phase[] = [
 export const PLANNING_FLOW: { step: string; owner: Role; action: string; state: "완료" | "진행 중" | "대기"; to: string }[] = [
   { step: "자료 등록", owner: "human", action: "문서·GitHub Issue를 추가", state: "완료", to: "sources" },
   { step: "자료 분석", owner: "ai", action: "요구사항·충돌을 자동 정리", state: "완료", to: "sources" },
-  { step: "PRD 초안 생성", owner: "ai", action: "정리된 요구사항으로 PRD 작성", state: "완료", to: "prd" },
+  { step: "요구사항 인터뷰", owner: "both", action: "AI가 모호한 점을 되묻고 사람이 결정", state: "완료", to: "interview" },
+  { step: "PRD 초안 생성", owner: "ai", action: "확정된 요구사항으로 PRD 작성", state: "완료", to: "prd" },
   { step: "PRD 검토·승인", owner: "human", action: "내용을 확인하고 수정·승인", state: "진행 중", to: "prd" },
   { step: "PRD Critic", owner: "ai", action: "누락·충돌을 점검해 완성도 채점", state: "진행 중", to: "critic" },
 ]
@@ -259,6 +261,62 @@ export const AGENTS = [
   { name: "Test Agent", model: "Claude Sonnet", turns: 15, timeout: "12분", color: "success" },
   { name: "Review Agent", model: "Claude Opus", turns: 10, timeout: "8분", color: "warning" },
   { name: "Repair Agent", model: "Claude Sonnet", turns: 8, timeout: "10분", color: "error" },
+]
+
+// ===== 요구사항 인터뷰 루프 (똑빌더식 개발 자동화) =====
+// 사람이 백로그 요구사항을 던지면 → AI가 분석하고 모호한 점을 하나씩 되물어요.
+// 사람이 답하며 모호함이 모두 해소되면 → AI가 스펙을 확정하고,
+// 테스트 코드를 먼저 만든 뒤(TDD) Sprint Go·Ship 에이전트가 구현으로 넘어가요.
+export const INTERVIEW_BACKLOG = {
+  id: "BL-118",
+  title: "회원 목록 검색·상태 필터",
+  from: "회원 관리 요구사항 회의록 (SRC-02)",
+  screen: "ADM-002",
+  raw: "회원 목록에서 회원을 검색하고 상태별로 필터링할 수 있어야 해요. 관리자가 회원을 빠르게 찾는 게 목적이에요.",
+}
+
+export type Ambiguity = { id: string; label: string }
+export const INTERVIEW_AMBIGUITIES: Ambiguity[] = [
+  { id: "A1", label: "검색 대상 필드" },
+  { id: "A2", label: "회원 상태 값 정의" },
+  { id: "A3", label: "화면 접근 권한" },
+  { id: "A4", label: "목록 정렬 기준" },
+  { id: "A5", label: "빈 결과·오류 처리" },
+]
+
+export type InterviewQuestion = { id: string; resolves: string; question: string; why: string; options: string[] }
+export const INTERVIEW_QUESTIONS: InterviewQuestion[] = [
+  { id: "Q1", resolves: "A1", question: "회원 검색은 어떤 필드를 기준으로 하나요?", why: "검색 인덱스와 쿼리 범위가 달라져요.", options: ["이름 + 이메일", "이름만", "이메일 + 전화번호", "전체 텍스트"] },
+  { id: "Q2", resolves: "A2", question: "회원 상태 값은 어떻게 구분하나요?", why: "필터 옵션과 데이터 모델의 enum이 결정돼요.", options: ["활성 · 휴면 · 탈퇴", "활성 · 휴면 · 탈퇴 · 정지", "활성 · 비활성"] },
+  { id: "Q3", resolves: "A3", question: "이 화면은 누가 접근할 수 있어야 하나요?", why: "권한 미들웨어와 403 처리 기준이 돼요.", options: ["슈퍼 관리자만", "관리자 전체", "역할별 세분화"] },
+  { id: "Q4", resolves: "A4", question: "목록의 기본 정렬은 무엇으로 할까요?", why: "기본 쿼리와 인수 테스트의 기대값이 정해져요.", options: ["최근 가입순", "이름 오름차순", "최근 활동순"] },
+  { id: "Q5", resolves: "A5", question: "검색 결과가 없을 때 어떻게 보여줄까요?", why: "Empty 상태 화면과 테스트 케이스가 필요해요.", options: ["빈 상태 안내 + 필터 초기화", "전체 목록으로 복귀", "추천 검색어 노출"] },
+]
+
+// 인터뷰가 끝나면 AI가 만들어내는 확정 스펙 미리보기
+export const INTERVIEW_SPEC = {
+  title: "회원 목록 검색·필터 기능 명세",
+  api: "GET /admin/members?q=&status=&sort=&page=",
+  fields: [
+    { k: "검색(q)", v: "이름·이메일 부분 일치" },
+    { k: "상태(status)", v: "active · dormant · withdrawn · suspended" },
+    { k: "정렬(sort)", v: "최근 가입순(기본)" },
+    { k: "권한", v: "관리자 전체(RBAC) · 탈퇴 조회는 슈퍼 관리자" },
+    { k: "상태 화면", v: "Loading · Ready · Empty · Error" },
+  ],
+  // 테스트 코드 먼저 (TDD) — 인수 기준
+  acceptance: [
+    "이름·이메일 부분검색 시 20건 페이지네이션",
+    "status=dormant 필터 시 휴면 회원만 반환",
+    "권한 없는 세션은 403 반환",
+    "결과 없음 시 Empty 상태 + 필터 초기화 노출",
+  ],
+}
+
+// 스펙 확정 후 구현을 맡는 똑빌더식 개발 자동화 플러그인
+export const BUILD_PLUGINS = [
+  { name: "Sprint Go", domain: "프론트엔드", note: "화면·상태·상호작용 구현", color: "blue" },
+  { name: "Ship", domain: "백엔드", note: "API·데이터·권한 구현", color: "purple" },
 ]
 
 export const AUTOMATION = [

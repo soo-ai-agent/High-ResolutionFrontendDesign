@@ -291,6 +291,7 @@ const PATHS: Record<string, ReactNode> = {
   user: <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>,
   sparkle: <><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M18 4v3M20 5.5h-3" /></>,
   handoff: <><path d="M7 8h9l-2.5-2.5M17 16H8l2.5 2.5" /></>,
+  chat: <><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 4V5Z" /><path d="M8 8.5h8M8 12h5" /></>,
 }
 
 export function Icon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {
