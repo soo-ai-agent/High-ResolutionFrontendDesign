@@ -10,8 +10,9 @@ import type { MirrorIssue, MirrorPull } from "../lib/mirror"
 const COLUMNS = ["Backlog", "Todo", "In Progress", "In Review", "Done"]
 const COL_TONE: Record<string, string> = { Backlog: "bg-[#8b95a1]", Todo: "bg-blue", "In Progress": "bg-purple", "In Review": "bg-warning", Done: "bg-success" }
 
-type BoardCard = { key: string; kind: "이슈" | "PR"; repo: string; number: number; title: string; url: string; labels: string[]; column: string }
+type BoardCard = { key: string; kind: "이슈" | "PR"; repo: string; number: number; title: string; url: string; labels: string[]; column: string; fromBoard: boolean }
 
+// stage·state 로 추론한 컬럼 (보드 상태가 없을 때 폴백)
 function issueColumn(it: MirrorIssue): string {
   if (it.state === "closed") return "Done"
   switch (it.stage) {
@@ -25,6 +26,15 @@ function issueColumn(it: MirrorIssue): string {
 function pullColumn(p: MirrorPull): string {
   if (p.merged || p.state === "closed") return "Done"
   return "In Review"
+}
+
+// 실제 GitHub Projects 보드 상태(projects_v2_item)를 컬럼으로 매칭
+const SYN: Record<string, string> = { "in progress": "In Progress", "in review": "In Review", todo: "Todo", "to do": "Todo", done: "Done", backlog: "Backlog", "in-progress": "In Progress" }
+function matchBoardColumn(status?: string | null): string | null {
+  if (!status) return null
+  const s = status.trim().toLowerCase()
+  const hit = COLUMNS.find((c) => c.toLowerCase() === s)
+  return hit ?? SYN[s] ?? null
 }
 
 export default function Board() {
@@ -53,8 +63,14 @@ export default function Board() {
 
   const cards = useMemo<BoardCard[]>(
     () => [
-      ...issues.map((it) => ({ key: `i-${it.repo}#${it.number}`, kind: "이슈" as const, repo: it.repo, number: it.number, title: it.title, url: it.html_url, labels: it.labels, column: issueColumn(it) })),
-      ...pulls.map((p) => ({ key: `p-${p.repo}#${p.number}`, kind: "PR" as const, repo: p.repo, number: p.number, title: p.title, url: p.html_url, labels: [], column: pullColumn(p) })),
+      ...issues.map((it) => {
+        const board = matchBoardColumn(it.boardStatus)
+        return { key: `i-${it.repo}#${it.number}`, kind: "이슈" as const, repo: it.repo, number: it.number, title: it.title, url: it.html_url, labels: it.labels, column: board ?? issueColumn(it), fromBoard: !!board }
+      }),
+      ...pulls.map((p) => {
+        const board = matchBoardColumn(p.boardStatus)
+        return { key: `p-${p.repo}#${p.number}`, kind: "PR" as const, repo: p.repo, number: p.number, title: p.title, url: p.html_url, labels: [], column: board ?? pullColumn(p), fromBoard: !!board }
+      }),
     ],
     [issues, pulls],
   )
@@ -73,7 +89,7 @@ export default function Board() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-2.5 text-[12px] text-text-secondary">
         <Icon name="board" className="h-4 w-4 text-text-tertiary" />
-        <span><b className="text-text-primary">뷰 전용</b> — 카드는 GitHub 이벤트(<code className="font-mono">kanban.yml</code>)로 자동 이동하고, 사람이 옮기지 않아요.</span>
+        <span><b className="text-text-primary">뷰 전용</b> — 카드는 GitHub 이벤트로 자동 이동해요. 실제 보드 이동은 <code className="font-mono">projects_v2_item</code>로 반영돼요(<span className="font-bold text-success">보드 반영</span>).</span>
         <span className="mx-1 text-line-strong">·</span>
         <span>집계 저장소 <b className="text-text-primary">{repos.length}</b>개</span>
       </div>
@@ -127,6 +143,7 @@ function BoardCardView({ card, showRepo }: { card: BoardCard; showRepo: boolean 
       <div className="flex items-center gap-2 text-[12px]">
         <Badge tone={card.kind === "PR" ? "purple" : "blue"}>{card.kind}</Badge>
         <span className="font-mono font-bold text-text-secondary">#{card.number}</span>
+        {card.fromBoard && <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-success-light px-2 py-0.5 text-[10px] font-bold text-success" title="실제 GitHub Projects 보드 상태">보드 반영</span>}
       </div>
       <div className="mt-2 text-[13px] font-bold leading-snug text-text-primary">{card.title}</div>
       {card.labels.length > 0 && (

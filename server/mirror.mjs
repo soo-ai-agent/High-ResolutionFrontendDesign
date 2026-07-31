@@ -68,6 +68,7 @@ function mirrorEvent(event, payload) {
       user: i.user?.login ?? null,
       html_url: i.html_url,
       updated_at: i.updated_at,
+      node_id: i.node_id, // projects_v2_item 의 content_node_id 와 매칭용
     })
     summary = `issue #${i.number} ${payload.action ?? ""}`.trim()
   } else if (event === "pull_request" && payload.pull_request) {
@@ -82,8 +83,27 @@ function mirrorEvent(event, payload) {
       user: p.user?.login ?? null,
       html_url: p.html_url,
       updated_at: p.updated_at,
+      node_id: p.node_id,
     })
     summary = `PR #${p.number} ${payload.action ?? ""}`.trim()
+  } else if (event === "projects_v2_item") {
+    // 실제 GitHub Projects 보드 이동을 미러링해요 (조직 레벨 이벤트).
+    const item = payload.projects_v2_item || {}
+    const contentNode = item.content_node_id || null
+    const contentType = item.content_type || null
+    const action = payload.action
+    let status = null
+    if (action === "edited") {
+      const fv = payload.changes?.field_value
+      if (fv && /status/i.test(fv.field_name || "")) {
+        status = fv.to?.name ?? (typeof fv.to === "string" ? fv.to : null)
+      }
+    }
+    const archived = action === "archived" || action === "deleted" || !!item.archived_at
+    db.upsertBoardItem({ contentNodeId: contentNode, contentType, projectNodeId: item.project_node_id ?? null, status, archived, action, updatedAt: item.updated_at ?? null })
+    // 미러된 이슈/PR과 연결해 실제 보드 컬럼을 반영
+    if (contentNode && status) db.setBoardStatusByNode(contentNode, status)
+    summary = `board ${contentType || "item"} ${action}${status ? " → " + status : ""}`
   } else if (event === "workflow_run" && payload.workflow_run) {
     const w = payload.workflow_run
     db.upsertRun({
@@ -203,6 +223,10 @@ export async function handleMirror(req, res) {
   }
   if (p === "/api/mirror/events") {
     send(res, 200, db.events(u.searchParams.get("repo")))
+    return true
+  }
+  if (p === "/api/mirror/board") {
+    send(res, 200, db.list("board"))
     return true
   }
 

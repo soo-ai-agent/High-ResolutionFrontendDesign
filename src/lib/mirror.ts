@@ -3,8 +3,8 @@
 // GitHub 로는 반영되지 않아요(서버 PATCH 만).
 
 export type MirrorSummary = { repos: number; issues: number; pulls: number; runs: number; events: number; updatedAt: string | null }
-export type MirrorIssue = { repo: string; number: number; title: string; state: string; labels: string[]; user: string | null; html_url: string; updated_at: string; stage: string | null; priority: string | null; mapping: unknown }
-export type MirrorPull = { repo: string; number: number; title: string; state: string; merged: boolean; draft: boolean; user: string | null; html_url: string; updated_at: string }
+export type MirrorIssue = { repo: string; number: number; title: string; state: string; labels: string[]; user: string | null; html_url: string; updated_at: string; stage: string | null; priority: string | null; mapping: unknown; boardStatus?: string | null }
+export type MirrorPull = { repo: string; number: number; title: string; state: string; merged: boolean; draft: boolean; user: string | null; html_url: string; updated_at: string; boardStatus?: string | null }
 export type MirrorRun = { repo: string; id: number; name: string; status: string; conclusion: string | null; head_branch: string; html_url: string; updated_at: string }
 export type MirrorEvent = { id: string | null; event: string; action: string | null; repo: string | null; at: string; verified: boolean; summary: string }
 

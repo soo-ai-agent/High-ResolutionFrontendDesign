@@ -11,7 +11,7 @@ import { fileURLToPath } from "node:url"
 const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), ".data")
 const FILE = path.join(DIR, "mirror.json")
 
-const empty = () => ({ repos: {}, issues: {}, pulls: {}, runs: {}, events: [], meta: { updatedAt: null } })
+const empty = () => ({ repos: {}, issues: {}, pulls: {}, runs: {}, board: {}, events: [], meta: { updatedAt: null } })
 
 let state = load()
 
@@ -61,13 +61,14 @@ export const db = {
     persist()
   },
 
-  // GitHub 필드는 payload 로 덮되, 관리 확장(stage·priority·mapping)은 보존해요.
+  // GitHub 필드는 payload 로 덮되, 관리 확장(stage·priority·mapping)과
+  // 보드 상태(boardStatus)는 보존해요 (재-미러링 시 사라지지 않도록).
   upsertIssue(i) {
     if (!i?.repo || i.number == null) return
     const k = keyN(i.repo, i.number)
     const prev = state.issues[k] || {}
-    const admin = { stage: prev.stage ?? null, priority: prev.priority ?? null, mapping: prev.mapping ?? null }
-    state.issues[k] = { ...i, ...admin }
+    const keep = { stage: prev.stage ?? null, priority: prev.priority ?? null, mapping: prev.mapping ?? null, boardStatus: prev.boardStatus ?? null, boardUpdatedAt: prev.boardUpdatedAt ?? null }
+    state.issues[k] = { ...i, ...keep }
     touch()
     persist()
   },
@@ -76,10 +77,35 @@ export const db = {
     if (!pr?.repo || pr.number == null) return
     const k = keyN(pr.repo, pr.number)
     const prev = state.pulls[k] || {}
-    const admin = { stage: prev.stage ?? null, priority: prev.priority ?? null, mapping: prev.mapping ?? null }
-    state.pulls[k] = { ...pr, ...admin }
+    const keep = { stage: prev.stage ?? null, priority: prev.priority ?? null, mapping: prev.mapping ?? null, boardStatus: prev.boardStatus ?? null, boardUpdatedAt: prev.boardUpdatedAt ?? null }
+    state.pulls[k] = { ...pr, ...keep }
     touch()
     persist()
+  },
+
+  // ---- GitHub Projects 보드 미러 (projects_v2_item) ----
+  // 보드 아이템(원시 이벤트)을 content_node_id 로 보관해요.
+  upsertBoardItem(b) {
+    if (!b?.contentNodeId) return
+    state.board[b.contentNodeId] = { ...(state.board[b.contentNodeId] || {}), ...b }
+    touch()
+    persist()
+  },
+
+  // 실제 보드 이동 반영: node_id 로 이슈/PR을 찾아 boardStatus 를 갱신해요.
+  setBoardStatusByNode(nodeId, status) {
+    if (!nodeId) return null
+    for (const kind of ["issues", "pulls"]) {
+      for (const k of Object.keys(state[kind])) {
+        if (state[kind][k].node_id === nodeId) {
+          state[kind][k] = { ...state[kind][k], boardStatus: status ?? null, boardUpdatedAt: new Date().toISOString() }
+          touch()
+          persist()
+          return state[kind][k]
+        }
+      }
+    }
+    return null
   },
 
   upsertRun(run) {
