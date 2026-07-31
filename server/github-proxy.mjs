@@ -70,6 +70,10 @@ function send(res, code, obj) {
 const mapRepo = (r) => ({ id: r.id, full_name: r.full_name, name: r.name, owner: r.owner.login, default_branch: r.default_branch, private: r.private, updated_at: r.updated_at })
 const mapIssue = (i) => ({ number: i.number, title: i.title, body: i.body ?? null, state: i.state, html_url: i.html_url, user: i.user?.login ?? "", labels: (i.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)) })
 const mapDoc = (d) => ({ name: d.name, path: d.path, type: d.type, size: d.size ?? 0 })
+const mapHook = (h) => ({ id: h.id, active: h.active, events: h.events ?? [], url: h.config?.url ?? "", insecure_ssl: h.config?.insecure_ssl ?? "0", last_status: h.last_response?.status ?? null, last_code: h.last_response?.code ?? null, updated_at: h.updated_at })
+
+// 웹훅에 등록할 기본 이벤트 (이슈·PR·Actions·푸시). projects_v2_item 은 조직 레벨이라 여기서 못 걸어요.
+const DEFAULT_HOOK_EVENTS = ["issues", "pull_request", "workflow_run", "push"]
 
 /** /api/github/* 요청을 처리해요. 처리했으면 true, 아니면 false 를 반환해요. */
 export async function handleGithub(req, res) {
@@ -206,6 +210,56 @@ export async function handleGithub(req, res) {
       const d = await r.json()
       const content = d.encoding === "base64" && typeof d.content === "string" ? Buffer.from(d.content, "base64").toString("utf-8") : d.content ?? ""
       send(res, 200, { content })
+      return true
+    }
+
+    // ---- 웹훅(레포지토리 훅) 관리: 실제 GitHub 저장소에 수신 웹훅을 등록/조회/핑 ----
+    if (p === "/api/github/hooks/ping" && req.method === "POST") {
+      const body = await readJson(req)
+      const { owner, repo, id } = body
+      if (!owner || !repo || id == null) {
+        send(res, 400, { error: "owner·repo·id 가 필요해요." })
+        return true
+      }
+      await gh(`/repos/${owner}/${repo}/hooks/${id}/pings`, { method: "POST" })
+      send(res, 200, { ok: true, pinged: id })
+      return true
+    }
+
+    if (p === "/api/github/hooks") {
+      // 등록: 저장소에 수신 웹훅 생성 (전달 URL·시크릿·이벤트)
+      if (req.method === "POST") {
+        const body = await readJson(req)
+        const owner = body.owner
+        const repo = body.repo
+        const url = String(body.url || "").trim()
+        if (!owner || !repo || !url) {
+          send(res, 400, { error: "owner·repo·url 이 필요해요." })
+          return true
+        }
+        const events = Array.isArray(body.events) && body.events.length ? body.events : DEFAULT_HOOK_EVENTS
+        const config = { url, content_type: "json", insecure_ssl: "0" }
+        const secret = String(body.secret || "").trim()
+        if (secret) config.secret = secret // GitHub 로만 전송, 응답에는 노출 안 됨
+        const r = await gh(`/repos/${owner}/${repo}/hooks`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: "web", active: true, events, config }),
+        })
+        const j = await r.json()
+        send(res, 201, mapHook(j))
+        return true
+      }
+      // 조회: 저장소의 웹훅 목록
+      const owner = u.searchParams.get("owner")
+      const repo = u.searchParams.get("repo")
+      if (!owner || !repo) {
+        send(res, 400, { error: "owner·repo가 필요해요." })
+        return true
+      }
+      const r = await gh(`/repos/${owner}/${repo}/hooks?per_page=100`)
+      const data = await r.json()
+      send(res, 200, (Array.isArray(data) ? data : []).map(mapHook))
       return true
     }
 

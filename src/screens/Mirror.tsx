@@ -2,7 +2,8 @@ import { useEffect, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, Tabs, EmptyState, Modal } from "../components/ui"
 import * as mirror from "../lib/mirror"
 import type { MirrorIssue, MirrorPull, MirrorRun, MirrorEvent, MirrorSummary } from "../lib/mirror"
-import { useGitHub, createIssue, mentionClaude } from "../lib/github"
+import { useGitHub, createIssue, mentionClaude, listHooks, createHook, pingHook } from "../lib/github"
+import type { GHHook } from "../lib/github"
 
 const STAGE_OPTS = ["초안", "계획", "빌드 중", "검토", "완료"]
 const PRIORITY_OPTS = ["낮음", "중간", "높음"]
@@ -140,6 +141,8 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
         {summary?.updatedAt && <span className="ml-auto text-text-tertiary">마지막 동기화 {fmt(summary.updatedAt)}</span>}
       </div>
 
+      <WebhookSetup connected={connected} navigate={navigate} defaultRepo={issues[0]?.repo ?? ""} />
+
       {writeMsg && (
         <div className="flex items-center justify-between gap-2 rounded-[10px] bg-success-light px-4 py-2.5 text-[13px] font-semibold text-success">
           <span>{writeMsg.text} <a href={writeMsg.url} target="_blank" rel="noreferrer" className="underline">GitHub에서 보기</a></span>
@@ -215,6 +218,124 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
         </div>
       </Modal>
     </div>
+  )
+}
+
+function WebhookSetup({ connected, navigate, defaultRepo }: { connected: boolean; navigate: (r: string) => void; defaultRepo: string }) {
+  const origin = typeof window !== "undefined" ? window.location.origin : ""
+  const receiver = `${origin}/api/webhook/github`
+  const [open, setOpen] = useState(false)
+  const [repo, setRepo] = useState(defaultRepo)
+  const [url, setUrl] = useState(receiver)
+  const [secret, setSecret] = useState("")
+  const [hooks, setHooks] = useState<GHHook[]>([])
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState("")
+  const [error, setError] = useState("")
+
+  const parsed = () => splitRepo(repo.trim())
+  const load = async () => {
+    const { owner, repo: name } = parsed()
+    if (!owner || !name) return setError("저장소를 owner/repo 형식으로 입력해 주세요.")
+    setBusy(true); setError(""); setMsg("")
+    try {
+      const hs = await listHooks(owner, name)
+      setHooks(hs)
+      setMsg(hs.length ? `등록된 웹훅 ${hs.length}개를 찾았어요.` : "등록된 웹훅이 없어요. 아래에서 등록하세요.")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const create = async () => {
+    const { owner, repo: name } = parsed()
+    if (!owner || !name || !url.trim()) return setError("저장소와 전달 URL이 필요해요.")
+    setBusy(true); setError(""); setMsg("")
+    try {
+      const h = await createHook(owner, name, { url: url.trim(), secret: secret.trim() || undefined })
+      setHooks((xs) => [h, ...xs.filter((x) => x.id !== h.id)])
+      setMsg(`웹훅 #${h.id}을(를) 등록했어요${secret.trim() ? " · 같은 시크릿을 서버 GITHUB_WEBHOOK_SECRET 로도 설정하세요." : " · 시크릿 없이 등록돼 이벤트는 ‘미검증’으로 표시돼요."}`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const ping = async (id: number) => {
+    const { owner, repo: name } = parsed()
+    if (!owner || !name) return
+    setBusy(true); setError(""); setMsg("")
+    try {
+      await pingHook(owner, name, id)
+      setMsg(`웹훅 #${id}에 ping을 보냈어요 · ‘이벤트’ 탭에서 수신을 확인하세요.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card className="p-0">
+      <button onClick={() => setOpen((o) => !o)} className="flex w-full items-center gap-3 px-4 py-3.5 text-left">
+        <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-blue-light text-blue"><Icon name="sync" className="h-4.5 w-4.5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-bold text-text-primary">웹훅 연결 <span className="ml-1 align-middle text-[11px] font-semibold text-text-tertiary">GitHub → 서버 수신</span></div>
+          <div className="truncate text-[12px] text-text-tertiary">저장소에 수신 웹훅을 등록하면 이슈·PR·Actions가 실시간으로 미러에 반영돼요.</div>
+        </div>
+        <Icon name="chevronDown" className={`h-4 w-4 shrink-0 text-text-tertiary transition-transform ${open ? "rotate-180" : ""}`} />
+      </button>
+
+      {open && (
+        <div className="space-y-3 border-t border-line px-4 py-4 text-left">
+          {/* 수신 엔드포인트 */}
+          <div className="rounded-[10px] bg-surface-2 p-3">
+            <div className="mb-1 text-[11px] font-bold uppercase tracking-wide text-text-disabled">서버 수신 엔드포인트</div>
+            <code className="block break-all font-mono text-[12px] font-semibold text-text-primary">{receiver}</code>
+            <div className="mt-1.5 text-[11px] text-text-tertiary">content type <code className="font-mono">application/json</code> · 서명 <code className="font-mono">x-hub-signature-256</code> (HMAC-SHA256)</div>
+          </div>
+
+          {/* 공개 URL 안내 — 정직하게 */}
+          <div className="flex items-start gap-2 rounded-[10px] bg-warning-light px-3 py-2.5 text-[12px] text-[#8a6d1a]">
+            <Icon name="help" className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>이 <b>미리보기</b>에는 공개 주소가 없어 GitHub가 직접 수신할 수 없어요. 실제 수신은 서버를 배포(<code className="font-mono">pnpm serve</code>)해 공개 URL로 노출하거나, 로컬은 <code className="font-mono">smee.io</code>·<code className="font-mono">cloudflared</code> 터널의 URL을 아래 ‘전달 URL’에 넣으세요.</span>
+          </div>
+
+          {!connected && <ConnectHint navigate={navigate} />}
+
+          {/* 등록 폼 */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="저장소 (owner/repo)"><input value={repo} onChange={(e) => setRepo(e.target.value)} placeholder="soo-ai-agent/high-resolutionfrontenddesign" className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" /></Field>
+            <Field label="전달 URL (공개 수신 주소)"><input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://your-host/api/webhook/github" className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 font-mono text-[12px] outline-none focus:border-blue" /></Field>
+          </div>
+          <Field label="시크릿 (선택 · 서버 GITHUB_WEBHOOK_SECRET 과 동일하게)"><input value={secret} onChange={(e) => setSecret(e.target.value)} type="password" placeholder="비우면 서명 미검증(개발용)" className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13px] outline-none focus:border-blue" /></Field>
+
+          <div className="flex flex-wrap gap-2">
+            <Button variant="primary" onClick={create} loading={busy} disabled={!connected}>웹훅 등록</Button>
+            <Button onClick={load} loading={busy} disabled={!connected}>등록 목록 조회</Button>
+          </div>
+
+          {msg && <div className="rounded-[10px] bg-success-light px-3 py-2 text-[12px] font-semibold text-success">{msg}</div>}
+          {error && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{error}</div>}
+
+          {hooks.length > 0 && (
+            <div className="divide-y divide-line rounded-[10px] border border-line">
+              {hooks.map((h) => (
+                <div key={h.id} className="flex items-center gap-2 px-3 py-2.5 text-[12px]">
+                  <Badge tone={h.active ? "success" : "neutral"}>{h.active ? "active" : "off"}</Badge>
+                  <span className="min-w-0 flex-1 truncate font-mono text-text-secondary" title={h.url}>{h.url}</span>
+                  {h.last_code != null && <span className="text-text-tertiary">last {h.last_code}</span>}
+                  <button onClick={() => ping(h.id)} disabled={busy} className="rounded-[8px] bg-surface-2 px-2.5 py-1 font-semibold text-text-secondary hover:bg-hover disabled:opacity-50">ping</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-[11px] text-text-tertiary">등록되는 이벤트: <code className="font-mono">issues · pull_request · workflow_run · push</code>. 실제 보드 이동(<code className="font-mono">projects_v2_item</code>)은 조직 레벨 이벤트라 조직 설정의 웹훅에서 따로 켜야 해요.</p>
+        </div>
+      )}
+    </Card>
   )
 }
 

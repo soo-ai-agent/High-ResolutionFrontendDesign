@@ -43,6 +43,8 @@ export const db = {
     issues: Object.keys(state.issues).length,
     pulls: Object.keys(state.pulls).length,
     runs: Object.keys(state.runs).length,
+    // 진행 중(완료 아님) Actions 실행 수 — 상단바의 라이브 표시용.
+    activeRuns: Object.values(state.runs).filter((r) => r.status && r.status !== "completed").length,
     events: state.events.length,
     updatedAt: state.meta.updatedAt,
   }),

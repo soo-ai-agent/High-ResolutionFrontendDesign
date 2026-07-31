@@ -1,6 +1,9 @@
 import { useState, type ReactNode } from "react"
 import { Icon, IconButton, Badge, RoleChip, SyncMark } from "./ui"
 import { REPO, PHASES, PROJECT, PROJECT_REPOS } from "../data"
+import { useServerStatus } from "../lib/status"
+
+const fmtTime = (iso: string) => iso.slice(11, 16)
 
 const MENU = [
   { group: "기획", items: [
@@ -51,6 +54,7 @@ export default function Layout({ route, navigate, children }: { route: string; n
 
 function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: () => void }) {
   const [repoOpen, setRepoOpen] = useState(false)
+  const { connected, user, summary } = useServerStatus()
   return (
     <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
       <button onClick={onMenu} className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary hover:bg-hover lg:hidden" aria-label="메뉴">
@@ -98,18 +102,32 @@ function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: (
       </div>
 
       <div className="ml-auto flex items-center gap-3">
-        <div className="hidden xl:block"><SyncMark synced /></div>
-        <div className="hidden items-center gap-1.5 rounded-full bg-success-light px-3 py-1.5 md:flex">
-          <span className="h-1.5 w-1.5 rounded-full bg-success" />
-          <span className="text-[12px] font-semibold text-success">GitHub 동기화됨</span>
-        </div>
-        <div className="hidden items-center gap-1.5 rounded-full bg-blue-light px-3 py-1.5 sm:flex">
-          <span className="af-spin h-3 w-3 rounded-full border-2 border-blue/30 border-t-blue" />
-          <span className="text-[12px] font-semibold text-blue">Actions 2</span>
-        </div>
+        <div className="hidden xl:block"><SyncMark synced={connected} /></div>
+
+        {/* 실제 GitHub 연결 상태 (프록시 /api/github/status) */}
+        {connected ? (
+          <div className="hidden items-center gap-1.5 rounded-full bg-success-light px-3 py-1.5 md:flex" title={summary?.updatedAt ? `마지막 미러 동기화 ${fmtTime(summary.updatedAt)}` : "웹훅 수신 대기 중"}>
+            <span className="h-1.5 w-1.5 rounded-full bg-success" />
+            <span className="text-[12px] font-semibold text-success">GitHub 연결됨{user?.login ? ` · ${user.login}` : ""}</span>
+          </div>
+        ) : (
+          <button onClick={() => navigate("settings")} className="hidden items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 hover:brightness-95 md:flex" title="설정에서 GitHub 연결">
+            <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+            <span className="text-[12px] font-semibold text-[#b47908]">GitHub 연결 필요</span>
+          </button>
+        )}
+
+        {/* 진행 중 Actions — 실제 미러 요약 기준 (없으면 숨김) */}
+        {summary && summary.activeRuns > 0 && (
+          <button onClick={() => navigate("runs")} className="hidden items-center gap-1.5 rounded-full bg-blue-light px-3 py-1.5 hover:brightness-95 sm:flex" title="진행 중인 Actions 실행">
+            <span className="af-spin h-3 w-3 rounded-full border-2 border-blue/30 border-t-blue" />
+            <span className="text-[12px] font-semibold text-blue">Actions {summary.activeRuns}</span>
+          </button>
+        )}
+
         <IconButton label="알림"><span className="relative"><Icon name="bell" /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-error ring-2 ring-white" /></span></IconButton>
         <IconButton label="도움말"><Icon name="help" /></IconButton>
-        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" aria-label="계정">SB</button>
+        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" aria-label="계정">{user?.login ? user.login.slice(0, 2).toUpperCase() : "SB"}</button>
       </div>
     </header>
   )

@@ -153,6 +153,23 @@ export async function mentionClaude(owner: string, repo: string, number: number,
   return (await res.json()) as CommentResult
 }
 
+// ---- 저장소 웹훅(수신) 관리 — 실제 GitHub 저장소에 서버 수신 웹훅을 등록/조회/핑 ----
+export type GHHook = { id: number; active: boolean; events: string[]; url: string; insecure_ssl: string; last_status: string | null; last_code: number | null; updated_at: string }
+
+export async function listHooks(owner: string, repo: string): Promise<GHHook[]> {
+  const res = await call(`/hooks?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)
+  return (await res.json()) as GHHook[]
+}
+
+export async function createHook(owner: string, repo: string, input: { url: string; secret?: string; events?: string[] }): Promise<GHHook> {
+  const res = await call("/hooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, ...input }) })
+  return (await res.json()) as GHHook
+}
+
+export async function pingHook(owner: string, repo: string, id: number): Promise<void> {
+  await call("/hooks/ping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, id }) })
+}
+
 // ---- React 훅 ----
 export function useGitHub() {
   const connected = useSyncExternalStore(subscribe, isConnected, () => false)
