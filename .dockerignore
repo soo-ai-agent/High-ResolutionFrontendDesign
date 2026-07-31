@@ -1,0 +1,14 @@
+node_modules
+dist
+build
+.cache
+.vite
+.git
+.gitignore
+.env*
+*.log
+logs
+server/.data
+*.tsbuildinfo
+.DS_Store
+.claude*

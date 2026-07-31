@@ -8,7 +8,9 @@ import { readFileSync, writeFileSync, mkdirSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), ".data")
+// 저장 위치는 MIRROR_DATA_DIR 로 바꿀 수 있어요(컨테이너에선 마운트된 볼륨을 가리키게).
+// 미설정이면 server/.data 로 폴백해요.
+const DIR = process.env.MIRROR_DATA_DIR ? path.resolve(process.env.MIRROR_DATA_DIR) : path.join(path.dirname(fileURLToPath(import.meta.url)), ".data")
 const FILE = path.join(DIR, "mirror.json")
 
 const empty = () => ({ repos: {}, issues: {}, pulls: {}, runs: {}, board: {}, events: [], meta: { updatedAt: null } })
