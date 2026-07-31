@@ -4,6 +4,9 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
 import siteConfiguration from './.figma/make/site.json'
+// 앱 데이터 값의 단일 소스. 서버(개발/프리뷰/프로덕션)가 이 값을 /api/bootstrap 으로 제공해요.
+// 프론트엔드 번들에는 포함되지 않아요 (src/data.ts 는 타입만 참조).
+import * as APP_DATA from './src/data.source'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -19,6 +22,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
+      appApiPlugin(APP_DATA),
       figmaSiteConfiguration(siteConfiguration),
       figmaErrorOverlayReplay(),
       figmaReactRefreshBoundaryFallback(),
@@ -66,6 +70,40 @@ type FigmaSiteConfiguration = {
   }
   accessibility?: {
     addBypassLinks?: boolean
+  }
+}
+
+/**
+ * 앱 데이터 API. 개발/프리뷰 서버에 /api/bootstrap 미들웨어를 붙여 데이터를
+ * JSON 으로 제공하고, 프로덕션 빌드에는 bootstrap.json 을 함께 emit 해요.
+ * 별도 프로세스나 추가 의존성 없이 같은 오리진에서 동작해요.
+ */
+function appApiPlugin(data: Record<string, unknown>): Plugin {
+  const payload = JSON.stringify({ ...data })
+  const handler = (req: any, res: any, next: any) => {
+    const url = String(req.url || '').split('?')[0]
+    if (url === '/api/health') {
+      res.setHeader('Content-Type', 'application/json')
+      return res.end('{"ok":true}')
+    }
+    if (url === '/api/bootstrap') {
+      res.setHeader('Content-Type', 'application/json; charset=utf-8')
+      res.setHeader('Cache-Control', 'no-store')
+      return res.end(payload)
+    }
+    next()
+  }
+  return {
+    name: 'app-api',
+    configureServer(server) {
+      server.middlewares.use(handler)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(handler)
+    },
+    generateBundle() {
+      this.emitFile({ type: 'asset', fileName: 'bootstrap.json', source: payload })
+    },
   }
 }
 

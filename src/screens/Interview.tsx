@@ -4,18 +4,19 @@ import { INTERVIEW_BACKLOG, INTERVIEW_AMBIGUITIES, INTERVIEW_QUESTIONS, INTERVIE
 
 type Msg = { role: "ai" | "human"; text: string; tag?: string }
 
-const TOTAL = INTERVIEW_QUESTIONS.length
 const labelFor = (id: string) => INTERVIEW_AMBIGUITIES.find((a) => a.id === id)?.label ?? id
 
 // 인터뷰 시작 시점의 대화 — AI가 백로그를 분석하고 첫 질문을 던져요.
+// (데이터는 렌더 시점에 이미 서버에서 하이드레이트된 상태예요.)
 function initialMessages(): Msg[] {
   return [
-    { role: "ai", text: `백로그 "${INTERVIEW_BACKLOG.title}"를 분석했어요. 바로 구현하기엔 모호한 점 ${TOTAL}가지가 있어서 하나씩 여쭤볼게요.`, tag: "AI 분석 완료" },
+    { role: "ai", text: `백로그 "${INTERVIEW_BACKLOG.title}"를 분석했어요. 바로 구현하기엔 모호한 점 ${INTERVIEW_QUESTIONS.length}가지가 있어서 하나씩 여쭤볼게요.`, tag: "AI 분석 완료" },
     { role: "ai", text: INTERVIEW_QUESTIONS[0].question, tag: INTERVIEW_QUESTIONS[0].why },
   ]
 }
 
 export default function Interview({ navigate }: { navigate: (r: string) => void }) {
+  const TOTAL = INTERVIEW_QUESTIONS.length
   const [step, setStep] = useState(0) // 답변한 질문 수
   const [messages, setMessages] = useState<Msg[]>(initialMessages)
   const [typing, setTyping] = useState(false)
