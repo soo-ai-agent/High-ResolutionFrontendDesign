@@ -1,8 +1,18 @@
 import { useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, SearchField, Drawer, Row, Tabs, toneFor } from "../components/ui"
-import { TASK_COLUMNS, TASKS, PRS, PR_CHECKS, RUNS, RUN_STEPS, TESTS_SUMMARY, TEST_CASES, type Task } from "../data"
+import { TASK_COLUMNS, TASKS, PRS, PR_CHECKS, RUNS, RUN_STEPS, TESTS_SUMMARY, TEST_CASES, BUILD_PLUGINS, type Task } from "../data"
 
 const DOMAIN_TONE: Record<string, any> = { backend: "blue", frontend: "purple", test: "success", infra: "warning" }
+
+// TDD 단계 배지 — 테스트 먼저(Red) → 구현(Green) → 리팩터 → 통과
+const TDD_BADGE: Record<string, { label: string; tone: any }> = {
+  "테스트": { label: "테스트 먼저", tone: "warning" },
+  "구현": { label: "구현 · Green", tone: "blue" },
+  "리팩터": { label: "리팩터", tone: "purple" },
+  "완료": { label: "테스트 통과", tone: "success" },
+}
+// 도메인별 구현 플러그인 (똑빌더식): 프론트 → Sprint Go, 백엔드 → Ship
+const pluginFor = (domain: string) => BUILD_PLUGINS.find((p) => (domain === "frontend" && p.domain === "프론트엔드") || (domain === "backend" && p.domain === "백엔드"))
 
 // ============ TASK BOARD ============
 export function Tasks({ navigate }: { navigate: (r: string) => void }) {
@@ -24,11 +34,11 @@ export function Tasks({ navigate }: { navigate: (r: string) => void }) {
 
       <div className="flex flex-wrap gap-3">
         <Metric label="전체" value="65" />
+        <Metric label="테스트 먼저" value="48/65" tone="success" />
         <Metric label="완료" value="38" tone="success" />
         <Metric label="실행 중" value="5" tone="blue" />
         <Metric label="검토 중" value="4" tone="warning" />
         <Metric label="차단" value="2" tone="error" />
-        <Metric label="진행률" value="58.5%" tone="blue" />
       </div>
 
       <div className="flex items-center justify-between">
@@ -72,6 +82,7 @@ function TaskCard({ t, onClick }: { t: Task; onClick: () => void }) {
       <div className="flex items-center gap-2 text-[12px]">
         <span className="font-mono font-bold text-text-secondary">{t.id}</span>
         <Badge tone={DOMAIN_TONE[t.domain]}>{t.domain}</Badge>
+        <span className="ml-auto"><Badge tone={TDD_BADGE[t.tdd].tone}>{TDD_BADGE[t.tdd].label}</Badge></span>
       </div>
       <div className="mt-2 text-[14px] font-bold leading-snug text-text-primary">{t.title}</div>
       <div className="mt-3 flex items-center gap-1.5">
@@ -139,8 +150,35 @@ function TaskDrawer({ task, onClose, navigate }: { task: Task | null; onClose: (
           <Field title="작업 설명">회원 관리 화면(ADM-002)에서 사용할 회원 목록 조회 API를 구현합니다. 페이지네이션과 검색 파라미터를 지원해야 합니다.</Field>
 
           <div className="rounded-[12px] bg-purple-light p-4">
-            <div className="flex items-center gap-2"><Icon name="manual" className="h-4 w-4 text-purple" /><span className="text-[13px] font-bold text-purple">{task.agent}</span></div>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2"><Icon name="manual" className="h-4 w-4 text-purple" /><span className="text-[13px] font-bold text-purple">{task.agent}</span></div>
+              {pluginFor(task.domain) && <Badge tone="purple">{pluginFor(task.domain)!.name}</Badge>}
+            </div>
             <div className="mt-2 grid grid-cols-2 gap-2 text-[12px] text-text-secondary"><span>모델 · Claude Sonnet</span><span>최대 Turn · 20</span></div>
+          </div>
+
+          <TddFlow phase={task.tdd} />
+
+          <div>
+            <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-text-primary">
+              <Icon name="test" className="h-4 w-4 text-success" />이 작업의 테스트
+              <span className="text-[11px] font-semibold text-text-tertiary">구현 전 먼저 작성</span>
+            </div>
+            <div className="rounded-[12px] border border-line">
+              {(() => {
+                const related = TEST_CASES.filter((c) => c.task === task.id)
+                if (related.length === 0) return <div className="px-4 py-3 text-[12px] text-text-tertiary">테스트 계획 생성 대기 — AI가 인수 기준을 테스트로 먼저 작성해요.</div>
+                return related.map((c, i) => (
+                  <div key={c.id} className={`flex items-center justify-between gap-2 px-4 py-2.5 ${i < related.length - 1 ? "border-b border-line" : ""}`}>
+                    <div className="min-w-0">
+                      <span className="font-mono text-[12px] font-bold text-text-secondary">{c.id}</span>
+                      <div className="truncate text-[12px] text-text-secondary">{c.expect}</div>
+                    </div>
+                    <Badge>{c.status}</Badge>
+                  </div>
+                ))
+              })()}
+            </div>
           </div>
 
           <div className="divide-y divide-line">
@@ -352,6 +390,11 @@ export function Tests() {
   return (
     <div className="space-y-6">
       <SectionTitle title="테스트" desc="화면과 작업별 테스트 결과와 결함을 확인하세요." />
+      <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-success-light px-4 py-2.5">
+        <Icon name="test" className="h-4 w-4 shrink-0 text-success" />
+        <span className="text-[13px] font-semibold text-success">구현 전에 테스트를 먼저 작성해요 (TDD).</span>
+        <span className="text-[12px] text-text-secondary">인수 기준 → 테스트 작성(Red) → 구현(Green) 순서로 진행돼요.</span>
+      </div>
       <div className="flex flex-wrap gap-3">
         {TESTS_SUMMARY.map((s) => <Metric key={s.label} label={s.label} value={s.value} tone={(s as any).tone} />)}
       </div>
@@ -423,6 +466,41 @@ function RunLine({ id, text, tone }: { id: string; text: string; tone?: string }
     <div className="flex items-center gap-2 rounded-[10px] bg-surface-2 px-3 py-2 text-[12px]">
       <span className="font-mono font-bold text-text-secondary">{id}</span>
       <span className={tone === "error" ? "text-error" : "text-text-secondary"}>{text}</span>
+    </div>
+  )
+}
+
+// TDD 3단계 진행 표시 — 테스트 먼저(Red) → 구현(Green) → 리팩터. 현재 단계를 강조해요.
+function TddFlow({ phase }: { phase: string }) {
+  const order = ["테스트", "구현", "리팩터", "완료"]
+  const cur = order.indexOf(phase)
+  const steps = [
+    { key: "테스트", label: "테스트 먼저", sub: "Red" },
+    { key: "구현", label: "구현", sub: "Green" },
+    { key: "리팩터", label: "리팩터", sub: "Refactor" },
+  ]
+  return (
+    <div className="rounded-[12px] border border-line p-4">
+      <div className="flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="test" className="h-4 w-4 text-success" />TDD 진행 · 테스트 먼저</div>
+      <div className="mt-3 flex items-center gap-0.5">
+        {steps.map((s, i) => {
+          const stepIdx = order.indexOf(s.key)
+          const done = phase === "완료" || cur > stepIdx
+          const active = phase === s.key
+          return (
+            <div key={s.key} className="flex flex-1 items-center">
+              <div className={`flex-1 rounded-[10px] border p-2.5 text-center ${active ? "border-blue bg-blue-light" : done ? "border-line bg-surface-2" : "border-dashed border-line bg-surface"}`}>
+                <div className="flex items-center justify-center gap-1">
+                  {done && <span className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-success text-white"><Icon name="check" className="h-2.5 w-2.5" /></span>}
+                  <span className={`text-[12px] font-bold ${active ? "text-blue" : done ? "text-text-primary" : "text-text-tertiary"}`}>{s.label}</span>
+                </div>
+                <div className="mt-0.5 text-[10px] font-semibold text-text-tertiary">{s.sub}</div>
+              </div>
+              {i < steps.length - 1 && <Icon name="chevron" className="h-3.5 w-3.5 shrink-0 text-line-strong" />}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }

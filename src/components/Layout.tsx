@@ -113,7 +113,7 @@ function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: (
 }
 
 function PhaseStepper({ route, navigate }: { route: string; navigate: (r: string) => void }) {
-  const phaseRoute: Record<string, string> = { overview: "overview", sources: "sources", interview: "interview", prd: "prd", critic: "prd", ia: "ia", tasks: "tasks", build: "tasks", verify: "tests", deploy: "releases", release: "releases" }
+  const phaseRoute: Record<string, string> = { overview: "overview", sources: "sources", interview: "interview", prd: "prd", critic: "prd", ia: "ia", tasks: "tasks", test: "tests", build: "tasks", verify: "tests", deploy: "releases", release: "releases" }
   const ownerDot: Record<string, string> = { human: "bg-warning", ai: "bg-purple", both: "bg-blue" }
   const active = PHASES.find((p) => phaseRoute[p.key] === route)
   return (

@@ -45,8 +45,9 @@ export const PHASES: Phase[] = [
   { key: "prd", label: "PRD", status: "완료", owner: "both", ownerNote: "AI가 초안 · 사람이 승인" },
   { key: "ia", label: "IA·디자인", status: "완료", owner: "ai", ownerNote: "AI가 설계" },
   { key: "tasks", label: "작업 생성", status: "완료", owner: "ai", ownerNote: "AI가 작업 분해" },
-  { key: "build", label: "구현", status: "실행 중", owner: "ai", ownerNote: "AI가 코드 구현" },
-  { key: "verify", label: "검증", status: "검토 필요", owner: "ai", ownerNote: "AI가 테스트 · 사람이 확인" },
+  { key: "test", label: "테스트 먼저", status: "실행 중", owner: "ai", ownerNote: "AI가 테스트를 먼저 작성해요 (TDD)" },
+  { key: "build", label: "구현", status: "실행 중", owner: "ai", ownerNote: "AI가 테스트를 통과시키며 구현" },
+  { key: "verify", label: "검증", status: "검토 필요", owner: "ai", ownerNote: "AI가 테스트 실행 · 사람이 확인" },
   { key: "deploy", label: "배포", status: "대기", owner: "human", ownerNote: "사람이 배포를 승인해요" },
   { key: "release", label: "릴리스", status: "대기", owner: "both", ownerNote: "AI가 정리 · 사람이 승인" },
 ]
@@ -75,6 +76,7 @@ export const PIPELINE = [
   { label: "PRD", detail: "완료", status: "완료" },
   { label: "IA", detail: "완료", status: "완료" },
   { label: "작업 생성", detail: "완료", status: "완료" },
+  { label: "테스트 먼저", detail: "48/65 작성", status: "실행 중" },
   { label: "구현", detail: "38/65", status: "실행 중" },
   { label: "검증", detail: "진행 중", status: "실행 중" },
   { label: "Staging 배포", detail: "완료", status: "완료" },
@@ -104,7 +106,10 @@ export const REPOS = [
   { full: "sample-org / docs-portal", visibility: "공개", branch: "main", phase: "PRD", progress: 12, tasks: 0, prs: 0, fails: 0, deploy: "미배포", updated: "3일 전", synced: true },
 ]
 
-export const TASK_COLUMNS = ["초안", "계획 완료", "실행 준비", "구현 중", "PR 검토", "수정 필요", "완료"]
+export const TASK_COLUMNS = ["초안", "계획 완료", "실행 준비", "테스트 작성", "구현 중", "PR 검토", "수정 필요", "완료"]
+
+// TDD 단계 — 테스트를 먼저 작성(Red)하고, 통과시키며 구현(Green)하고, 정리(Refactor)해요.
+export type TddPhase = "테스트" | "구현" | "리팩터" | "완료"
 
 export type Task = {
   id: string
@@ -118,18 +123,19 @@ export type Task = {
   pr: string
   check: string
   status: string
+  tdd: TddPhase // 이 작업이 놓인 TDD 단계
 }
 
 export const TASKS: Task[] = [
-  { id: "T-045", title: "회원 목록 조회 API", domain: "backend", agent: "Backend Agent", risk: "중간", deps: "2/2 완료", screen: "ADM-002", issue: "#72", pr: "#83", check: "CI 실패", status: "PR 검토" },
-  { id: "T-046", title: "회원 상세 화면 구현", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "1/1 완료", screen: "ADM-002", issue: "#73", pr: "#84", check: "CI 성공", status: "PR 검토" },
-  { id: "T-047", title: "로그인 실패 흐름 처리", domain: "frontend", agent: "Frontend Agent", risk: "중간", deps: "0/1", screen: "SCR-101", issue: "#74", pr: "—", check: "—", status: "실행 준비" },
-  { id: "T-048", title: "권한 미들웨어 추가", domain: "backend", agent: "Backend Agent", risk: "높음", deps: "1/2", screen: "—", issue: "#75", pr: "—", check: "—", status: "구현 중" },
-  { id: "T-049", title: "콘텐츠 관리 목록 API", domain: "backend", agent: "Backend Agent", risk: "낮음", deps: "2/2 완료", screen: "ADM-003", issue: "#76", pr: "#85", check: "진행 중", status: "구현 중" },
-  { id: "T-050", title: "이용약관 화면 마크업", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "완료", screen: "SCR-201", issue: "#77", pr: "—", check: "—", status: "계획 완료" },
-  { id: "T-051", title: "E2E 로그인 테스트", domain: "test", agent: "Test Agent", risk: "낮음", deps: "1/1", screen: "SCR-101", issue: "#78", pr: "—", check: "—", status: "초안" },
-  { id: "T-044", title: "세션 토큰 갱신 로직", domain: "backend", agent: "Backend Agent", risk: "중간", deps: "완료", screen: "—", issue: "#71", pr: "#80", check: "CI 성공", status: "완료" },
-  { id: "T-043", title: "대시보드 카드 컴포넌트", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "완료", screen: "ADM-001", issue: "#70", pr: "#79", check: "CI 성공", status: "완료" },
+  { id: "T-045", title: "회원 목록 조회 API", domain: "backend", agent: "Backend Agent", risk: "중간", deps: "2/2 완료", screen: "ADM-002", issue: "#72", pr: "#83", check: "CI 실패", status: "PR 검토", tdd: "구현" },
+  { id: "T-046", title: "회원 상세 화면 구현", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "1/1 완료", screen: "ADM-002", issue: "#73", pr: "#84", check: "CI 성공", status: "PR 검토", tdd: "완료" },
+  { id: "T-047", title: "로그인 실패 흐름 처리", domain: "frontend", agent: "Frontend Agent", risk: "중간", deps: "1/1 완료", screen: "SCR-101", issue: "#74", pr: "—", check: "테스트 Red", status: "테스트 작성", tdd: "테스트" },
+  { id: "T-048", title: "권한 미들웨어 추가", domain: "backend", agent: "Backend Agent", risk: "높음", deps: "1/2", screen: "—", issue: "#75", pr: "—", check: "—", status: "구현 중", tdd: "구현" },
+  { id: "T-049", title: "콘텐츠 관리 목록 API", domain: "backend", agent: "Backend Agent", risk: "낮음", deps: "2/2 완료", screen: "ADM-003", issue: "#76", pr: "#85", check: "진행 중", status: "구현 중", tdd: "구현" },
+  { id: "T-050", title: "이용약관 화면 마크업", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "완료", screen: "SCR-201", issue: "#77", pr: "—", check: "—", status: "계획 완료", tdd: "테스트" },
+  { id: "T-051", title: "E2E 로그인 테스트", domain: "test", agent: "Test Agent", risk: "낮음", deps: "1/1 완료", screen: "SCR-101", issue: "#78", pr: "—", check: "테스트 Red", status: "테스트 작성", tdd: "테스트" },
+  { id: "T-044", title: "세션 토큰 갱신 로직", domain: "backend", agent: "Backend Agent", risk: "중간", deps: "완료", screen: "—", issue: "#71", pr: "#80", check: "CI 성공", status: "완료", tdd: "완료" },
+  { id: "T-043", title: "대시보드 카드 컴포넌트", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "완료", screen: "ADM-001", issue: "#70", pr: "#79", check: "CI 성공", status: "완료", tdd: "완료" },
 ]
 
 export const PRS = [
@@ -160,13 +166,16 @@ export const RUNS = [
   { id: "#508", workflow: "Frontend Agent", target: "T-041", agent: "Frontend Agent", attempt: "1차", started: "09:12", dur: "8분 51초", status: "완료", model: "Claude Sonnet", result: "PR #81" },
 ]
 
+// TDD 순서의 Agent 실행 타임라인 — 스펙 확인 → 테스트 먼저(Red) → 구현(Green) → PR.
 export const RUN_STEPS = [
   { name: "Checkout", status: "완료", started: "09:58:02", dur: "4초" },
-  { name: "의존성 검사", status: "완료", started: "09:58:06", dur: "38초" },
-  { name: "Agent 실행", status: "완료", started: "09:58:44", dur: "9분 12초" },
-  { name: "Test", status: "완료", started: "10:07:56", dur: "1분 20초" },
-  { name: "PR 생성", status: "완료", started: "10:09:16", dur: "8초" },
-  { name: "완료", status: "완료", started: "10:09:24", dur: "—" },
+  { name: "의존성 설치", status: "완료", started: "09:58:06", dur: "38초" },
+  { name: "스펙 확인", status: "완료", started: "09:58:44", dur: "22초" },
+  { name: "테스트 먼저 작성", status: "완료", started: "09:59:06", dur: "2분 41초" },
+  { name: "테스트 실행 (Red)", status: "완료", started: "10:01:47", dur: "34초" },
+  { name: "구현 (Green)", status: "완료", started: "10:02:21", dur: "6분 12초" },
+  { name: "테스트 실행 (Green)", status: "완료", started: "10:08:33", dur: "1분 20초" },
+  { name: "PR 생성", status: "완료", started: "10:09:53", dur: "8초" },
 ]
 
 export const SCREENS = [
