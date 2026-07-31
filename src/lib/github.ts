@@ -133,6 +133,26 @@ export async function getFileContent(owner: string, repo: string, path: string):
   return j.content ?? ""
 }
 
+// ---- 쓰기 (어드민 → GitHub 프록시 쓰기) ----
+export type CreatedIssue = { number: number; html_url: string; title: string }
+export type CommentResult = { id: number; html_url: string; body?: string }
+
+export async function createIssue(owner: string, repo: string, input: { title: string; body?: string; labels?: string[] }): Promise<CreatedIssue> {
+  const res = await call("/issues", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, ...input }) })
+  return (await res.json()) as CreatedIssue
+}
+
+export async function addComment(owner: string, repo: string, number: number, body: string): Promise<CommentResult> {
+  const res = await call("/comment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, number, body }) })
+  return (await res.json()) as CommentResult
+}
+
+// 이슈/PR에 @claude 코멘트를 남겨 Claude GitHub Action을 트리거해요.
+export async function mentionClaude(owner: string, repo: string, number: number, prompt: string): Promise<CommentResult> {
+  const res = await call("/claude", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, number, prompt }) })
+  return (await res.json()) as CommentResult
+}
+
 // ---- React 훅 ----
 export function useGitHub() {
   const connected = useSyncExternalStore(subscribe, isConnected, () => false)

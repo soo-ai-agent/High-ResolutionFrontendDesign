@@ -26,7 +26,7 @@ const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   "pull-requests": (nav) => <PullRequests navigate={nav} />,
   runs: () => <Runs />,
   tests: () => <Tests />,
-  mirror: () => <Mirror />,
+  mirror: (nav) => <Mirror navigate={nav} />,
   "human-tasks": () => <HumanTasks />,
   releases: () => <Releases />,
   settings: () => <Settings />,

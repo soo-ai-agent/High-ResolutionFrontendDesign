@@ -117,6 +117,24 @@ export async function handleGithub(req, res) {
     }
 
     if (p === "/api/github/issues") {
+      // 쓰기: 이슈 생성 (어드민 → GitHub 프록시 쓰기)
+      if (req.method === "POST") {
+        const body = await readJson(req)
+        const owner = body.owner
+        const repo = body.repo
+        const title = String(body.title || "").trim()
+        if (!owner || !repo || !title) {
+          send(res, 400, { error: "owner·repo·title 이 필요해요." })
+          return true
+        }
+        const payload = { title, body: body.body ?? "" }
+        if (Array.isArray(body.labels) && body.labels.length) payload.labels = body.labels
+        const r = await gh(`/repos/${owner}/${repo}/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
+        const j = await r.json()
+        send(res, 201, { number: j.number, html_url: j.html_url, title: j.title })
+        return true
+      }
+      // 읽기: 이슈 목록
       const owner = u.searchParams.get("owner")
       const repo = u.searchParams.get("repo")
       if (!owner || !repo) {
@@ -126,6 +144,37 @@ export async function handleGithub(req, res) {
       const r = await gh(`/repos/${owner}/${repo}/issues?state=all&per_page=50`)
       const data = await r.json()
       send(res, 200, data.filter((i) => !i.pull_request).map(mapIssue))
+      return true
+    }
+
+    // 쓰기: 이슈/PR 코멘트 생성
+    if (p === "/api/github/comment" && req.method === "POST") {
+      const body = await readJson(req)
+      const { owner, repo, number } = body
+      const text = String(body.body || "").trim()
+      if (!owner || !repo || number == null || !text) {
+        send(res, 400, { error: "owner·repo·number·body 가 필요해요." })
+        return true
+      }
+      const r = await gh(`/repos/${owner}/${repo}/issues/${number}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: text }) })
+      const j = await r.json()
+      send(res, 201, { id: j.id, html_url: j.html_url })
+      return true
+    }
+
+    // 쓰기: @claude 코멘트 (Claude GitHub Action 트리거)
+    if (p === "/api/github/claude" && req.method === "POST") {
+      const body = await readJson(req)
+      const { owner, repo, number } = body
+      const prompt = String(body.prompt || "").trim()
+      if (!owner || !repo || number == null || !prompt) {
+        send(res, 400, { error: "owner·repo·number·prompt 가 필요해요." })
+        return true
+      }
+      const text = prompt.startsWith("@claude") ? prompt : `@claude ${prompt}`
+      const r = await gh(`/repos/${owner}/${repo}/issues/${number}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: text }) })
+      const j = await r.json()
+      send(res, 201, { id: j.id, html_url: j.html_url, body: text })
       return true
     }
 
