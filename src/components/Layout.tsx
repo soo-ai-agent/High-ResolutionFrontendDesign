@@ -22,6 +22,7 @@ const MENU = [
     { key: "pull-requests", label: "Pull Requests", icon: "pr" },
     { key: "runs", label: "Actions 실행", icon: "runs" },
     { key: "tests", label: "테스트", icon: "test" },
+    { key: "mirror", label: "GitHub 미러", icon: "sync" },
   ] },
   { group: "운영", items: [
     { key: "human-tasks", label: "휴먼태스크", icon: "hand" },

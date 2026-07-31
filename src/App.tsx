@@ -7,6 +7,7 @@ import Interview from "./screens/Interview"
 import Pipeline from "./screens/Pipeline"
 import { Sources, PRD, Critic, IA, ScreenList, ScreenDetail, Flow, DesignSystem } from "./screens/Design"
 import { Tasks, PullRequests, Runs, Tests } from "./screens/Dev"
+import Mirror from "./screens/Mirror"
 import { HumanTasks, Releases, Settings } from "./screens/Ops"
 
 const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
@@ -25,6 +26,7 @@ const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   "pull-requests": (nav) => <PullRequests navigate={nav} />,
   runs: () => <Runs />,
   tests: () => <Tests />,
+  mirror: () => <Mirror />,
   "human-tasks": () => <HumanTasks />,
   releases: () => <Releases />,
   settings: () => <Settings />,
