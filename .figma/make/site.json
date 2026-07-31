@@ -1,0 +1,10 @@
+{
+  "description": "Manage GitHub repository workflows from PRD to release with AI-driven automation for streamlined planning, development, testing, and deployment.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
