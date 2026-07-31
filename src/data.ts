@@ -545,3 +545,53 @@ export const BUILD_TASKS: BuildTask[] = [
   // 릴리즈 (사람 승인)
   { id: "T-065", domain: "release", phase: "릴리즈", title: "production 배포", role: "사람", status: "대기" },
 ]
+
+// ===== 진행 흐름 (프로젝트 생성 후 누가 무엇을 하나) =====
+// 각 단계에서 에이전트(AI) · GitHub Actions(자동) · 사람이 각자 맡은 일을 이어받아요.
+export const ACTOR_SUMMARY: { key: "ai" | "auto" | "human"; title: string; icon: string; items: string[] }[] = [
+  { key: "ai", title: "에이전트 (AI)", icon: "sparkle", items: [
+    "요구사항 분석 · PRD · 설계 생성",
+    "테스트를 먼저 작성 (TDD)",
+    "Sprint Go · Ship이 코드 구현",
+    "CI 실패 시 Repair Agent 자동 수정",
+  ] },
+  { key: "auto", title: "GitHub Actions", icon: "runs", items: [
+    "단계별 워크플로 자동 실행",
+    "CI: 빌드 · 테스트 · 리뷰",
+    "브랜치 push · PR 자동 생성",
+    "Staging 자동 배포 · Smoke Test",
+  ] },
+  { key: "human", title: "사람", icon: "hand", items: [
+    "자료 등록 · 요구사항 결정",
+    "PRD · PR 검토 · 승인",
+    "외부 키 발급 (휴먼태스크)",
+    "Production 배포 승인",
+  ] },
+]
+
+export type PipelineStage = {
+  n: number
+  stage: string
+  phase: string
+  route: string
+  agent: string
+  actions: string
+  human: string
+  humanCheck: boolean
+  state: "완료" | "진행 중" | "대기"
+}
+
+export const PIPELINE_STAGES: PipelineStage[] = [
+  { n: 1, stage: "자료 수집·분석", phase: "기획", route: "sources", agent: "등록된 자료에서 요구사항·충돌 자동 정리", actions: "자료 등록 시 분석 워크플로 트리거", human: "문서·GitHub Issue 등록", humanCheck: true, state: "완료" },
+  { n: 2, stage: "요구사항 인터뷰", phase: "기획", route: "interview", agent: "모호한 점을 질문하고 답변을 반영해 스펙 확정", actions: "—", human: "질문에 답하고 결정", humanCheck: true, state: "완료" },
+  { n: 3, stage: "PRD 작성·Critic", phase: "기획", route: "prd", agent: "PRD 초안 생성 · Critic이 누락·충돌 점검·채점", actions: "PRD Critic 자동 실행", human: "PRD 내용 검토·승인", humanCheck: true, state: "완료" },
+  { n: 4, stage: "IA·디자인 시스템", phase: "설계", route: "ia", agent: "화면 구조(IA)·디자인 토큰 생성", actions: "산출물 저장 → 저장소 커밋", human: "화면 구성·디자인 확인", humanCheck: true, state: "완료" },
+  { n: 5, stage: "작업 생성", phase: "설계", route: "tasks", agent: "PRD·설계를 작업으로 분해 · Issue 생성", actions: "Task Planner → GitHub Issue 동기화", human: "작업 계획 훑어보기 (선택)", humanCheck: false, state: "완료" },
+  { n: 6, stage: "외부 키 발급", phase: "빌드", route: "human-tasks", agent: "—", actions: "키 등록 감지 → 차단됐던 작업 자동 해제", human: "OAuth·외부 API 키 발급·등록 (휴먼태스크)", humanCheck: true, state: "진행 중" },
+  { n: 7, stage: "테스트 먼저 (TDD)", phase: "빌드", route: "tests", agent: "인수 기준을 테스트로 먼저 작성 (Red)", actions: "테스트 실행 → 실패(Red) 확인", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 8, stage: "구현 (빌드)", phase: "빌드", route: "tasks", agent: "Sprint Go·Ship이 테스트를 통과시키며 구현 (Green)", actions: "Agent 실행 → 브랜치 push → PR 생성", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 9, stage: "검증 (CI)", phase: "빌드", route: "runs", agent: "CI 실패 시 Repair Agent 자동 수정 (1회)", actions: "lint · typecheck · test · build · agent-review", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 10, stage: "PR 검토·TDD 게이트", phase: "빌드", route: "pull-requests", agent: "Review Agent가 변경 검토", actions: "CI + TDD 게이트(테스트 먼저 확인) 통과 검사", human: "PR 검토 후 병합 승인", humanCheck: true, state: "대기" },
+  { n: 11, stage: "배포", phase: "운영", route: "releases", agent: "릴리스 노트 초안 생성", actions: "Staging 자동 배포 · Smoke Test", human: "Production 배포 승인", humanCheck: true, state: "대기" },
+  { n: 12, stage: "릴리스", phase: "운영", route: "releases", agent: "Release Note 정리", actions: "Release 자동 생성·태깅", human: "릴리스 최종 승인", humanCheck: true, state: "대기" },
+]

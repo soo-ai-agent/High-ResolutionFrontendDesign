@@ -5,6 +5,7 @@ import { REPO, PHASES, PROJECT, PROJECT_REPOS } from "../data"
 const MENU = [
   { group: "기획", items: [
     { key: "overview", label: "개요", icon: "overview" },
+    { key: "pipeline", label: "진행 흐름", icon: "handoff" },
     { key: "sources", label: "자료", icon: "doc" },
     { key: "interview", label: "요구사항 인터뷰", icon: "chat" },
     { key: "prd", label: "PRD", icon: "doc" },

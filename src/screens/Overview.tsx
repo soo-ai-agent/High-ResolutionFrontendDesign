@@ -23,6 +23,16 @@ export default function Overview({ navigate }: { navigate: (r: string) => void }
         </div>
       </div>
 
+      {/* 진행 흐름 안내: 프로젝트가 어떻게 진행되는지 */}
+      <button onClick={() => navigate("pipeline")} className="flex w-full items-center gap-3 rounded-[14px] border border-line bg-surface p-4 text-left transition-colors hover:bg-hover">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[12px] bg-blue-light text-blue"><Icon name="handoff" className="h-5 w-5" /></span>
+        <div className="min-w-0 flex-1">
+          <div className="text-[14px] font-bold text-text-primary">이 프로젝트는 어떻게 진행되나요?</div>
+          <div className="text-[12px] text-text-tertiary">에이전트 · GitHub Actions · 사람이 각 단계에서 무엇을 하는지 한눈에 보기</div>
+        </div>
+        <Icon name="chevron" className="h-4 w-4 shrink-0 text-text-tertiary" />
+      </button>
+
       {/* Summary cards */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
         {OVERVIEW_SUMMARY.map((s) => (
