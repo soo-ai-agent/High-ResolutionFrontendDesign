@@ -4,6 +4,7 @@ import http from 'node:http'
 import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { handleGithub } from './github-proxy.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.join(here, '..', 'dist')
@@ -32,6 +33,9 @@ const server = http.createServer(async (req, res) => {
   const url = String(req.url || '/').split('?')[0]
 
   if (url === '/api/health') return sendJson(res, { ok: true })
+  if (url.startsWith('/api/github')) {
+    if (await handleGithub(req, res)) return
+  }
   if (url === '/api/bootstrap') {
     try {
       const buf = await readFile(path.join(dist, 'bootstrap.json'))

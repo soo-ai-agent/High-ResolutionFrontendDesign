@@ -7,6 +7,8 @@ import siteConfiguration from './.figma/make/site.json'
 // 앱 데이터 값의 단일 소스. 서버(개발/프리뷰/프로덕션)가 이 값을 /api/bootstrap 으로 제공해요.
 // 프론트엔드 번들에는 포함되지 않아요 (src/data.ts 는 타입만 참조).
 import * as APP_DATA from './src/data.source'
+// 서버 측 GitHub 프록시 (/api/github/*). 프론트는 GitHub를 직접 호출하지 않아요.
+import { handleGithub } from './server/github-proxy.mjs'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -80,7 +82,7 @@ type FigmaSiteConfiguration = {
  */
 function appApiPlugin(data: Record<string, unknown>): Plugin {
   const payload = JSON.stringify({ ...data })
-  const handler = (req: any, res: any, next: any) => {
+  const handler = async (req: any, res: any, next: any) => {
     const url = String(req.url || '').split('?')[0]
     if (url === '/api/health') {
       res.setHeader('Content-Type', 'application/json')
@@ -90,6 +92,9 @@ function appApiPlugin(data: Record<string, unknown>): Plugin {
       res.setHeader('Content-Type', 'application/json; charset=utf-8')
       res.setHeader('Cache-Control', 'no-store')
       return res.end(payload)
+    }
+    if (url.startsWith('/api/github')) {
+      if (await handleGithub(req, res)) return
     }
     next()
   }

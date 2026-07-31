@@ -76,8 +76,8 @@ function GitHubConnect() {
       <div className="mt-4 space-y-1.5 rounded-[10px] bg-surface-2 p-3.5 text-[12px] text-text-secondary">
         <div className="font-bold text-text-primary">권한 안내</div>
         <div>· 공개 저장소만 사용한다면 <code className="rounded bg-surface px-1 font-mono">public_repo</code>, 비공개 저장소까지 쓰려면 <code className="rounded bg-surface px-1 font-mono">repo</code> 권한을 선택하세요.</div>
-        <div>· 토큰은 이 브라우저에만 저장되고, 입력 후에는 화면에 다시 표시되지 않아요.</div>
-        <div>· 백엔드가 구축되면 이 연결은 서버 측 OAuth로 대체될 예정이에요.</div>
+        <div>· 토큰은 서버로 전송돼 세션 동안 서버 메모리에만 보관되고, 브라우저·화면에는 저장·표시되지 않아요.</div>
+        <div>· GitHub 요청은 모두 서버 프록시(<code className="rounded bg-surface px-1 font-mono">/api/github</code>)를 거쳐요. 이후 서버 측 OAuth로 확장할 수 있어요.</div>
       </div>
     </Card>
   )
