@@ -5,6 +5,7 @@ import { readFile, stat } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { handleGithub } from './github-proxy.mjs'
+import { handleMirror } from './mirror.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const dist = path.join(here, '..', 'dist')
@@ -35,6 +36,9 @@ const server = http.createServer(async (req, res) => {
   if (url === '/api/health') return sendJson(res, { ok: true })
   if (url.startsWith('/api/github')) {
     if (await handleGithub(req, res)) return
+  }
+  if (url.startsWith('/api/webhook') || url.startsWith('/api/mirror')) {
+    if (await handleMirror(req, res)) return
   }
   if (url === '/api/bootstrap') {
     try {

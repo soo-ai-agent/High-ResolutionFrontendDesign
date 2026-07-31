@@ -9,6 +9,8 @@ import siteConfiguration from './.figma/make/site.json'
 import * as APP_DATA from './src/data.source'
 // 서버 측 GitHub 프록시 (/api/github/*). 프론트는 GitHub를 직접 호출하지 않아요.
 import { handleGithub } from './server/github-proxy.mjs'
+// GitHub → DB 미러 웹훅 (/api/webhook/*) + 미러 읽기 (/api/mirror/*).
+import { handleMirror } from './server/mirror.mjs'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -95,6 +97,9 @@ function appApiPlugin(data: Record<string, unknown>): Plugin {
     }
     if (url.startsWith('/api/github')) {
       if (await handleGithub(req, res)) return
+    }
+    if (url.startsWith('/api/webhook') || url.startsWith('/api/mirror')) {
+      if (await handleMirror(req, res)) return
     }
     next()
   }
