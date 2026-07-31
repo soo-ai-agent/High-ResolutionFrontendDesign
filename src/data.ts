@@ -575,6 +575,9 @@ export type PipelineStage = {
   phase: string
   route: string
   agent: string
+  agentName: string // 담당 에이전트 ("—" = 없음)
+  model: string // 사용 모델 ("—" = 없음)
+  duration: string // 예상 소요시간
   actions: string
   human: string
   humanCheck: boolean
@@ -582,16 +585,25 @@ export type PipelineStage = {
 }
 
 export const PIPELINE_STAGES: PipelineStage[] = [
-  { n: 1, stage: "자료 수집·분석", phase: "기획", route: "sources", agent: "등록된 자료에서 요구사항·충돌 자동 정리", actions: "자료 등록 시 분석 워크플로 트리거", human: "문서·GitHub Issue 등록", humanCheck: true, state: "완료" },
-  { n: 2, stage: "요구사항 인터뷰", phase: "기획", route: "interview", agent: "모호한 점을 질문하고 답변을 반영해 스펙 확정", actions: "—", human: "질문에 답하고 결정", humanCheck: true, state: "완료" },
-  { n: 3, stage: "PRD 작성·Critic", phase: "기획", route: "prd", agent: "PRD 초안 생성 · Critic이 누락·충돌 점검·채점", actions: "PRD Critic 자동 실행", human: "PRD 내용 검토·승인", humanCheck: true, state: "완료" },
-  { n: 4, stage: "IA·디자인 시스템", phase: "설계", route: "ia", agent: "화면 구조(IA)·디자인 토큰 생성", actions: "산출물 저장 → 저장소 커밋", human: "화면 구성·디자인 확인", humanCheck: true, state: "완료" },
-  { n: 5, stage: "작업 생성", phase: "설계", route: "tasks", agent: "PRD·설계를 작업으로 분해 · Issue 생성", actions: "Task Planner → GitHub Issue 동기화", human: "작업 계획 훑어보기 (선택)", humanCheck: false, state: "완료" },
-  { n: 6, stage: "외부 키 발급", phase: "빌드", route: "human-tasks", agent: "—", actions: "키 등록 감지 → 차단됐던 작업 자동 해제", human: "OAuth·외부 API 키 발급·등록 (휴먼태스크)", humanCheck: true, state: "진행 중" },
-  { n: 7, stage: "테스트 먼저 (TDD)", phase: "빌드", route: "tests", agent: "인수 기준을 테스트로 먼저 작성 (Red)", actions: "테스트 실행 → 실패(Red) 확인", human: "—", humanCheck: false, state: "진행 중" },
-  { n: 8, stage: "구현 (빌드)", phase: "빌드", route: "tasks", agent: "Sprint Go·Ship이 테스트를 통과시키며 구현 (Green)", actions: "Agent 실행 → 브랜치 push → PR 생성", human: "—", humanCheck: false, state: "진행 중" },
-  { n: 9, stage: "검증 (CI)", phase: "빌드", route: "runs", agent: "CI 실패 시 Repair Agent 자동 수정 (1회)", actions: "lint · typecheck · test · build · agent-review", human: "—", humanCheck: false, state: "진행 중" },
-  { n: 10, stage: "PR 검토·TDD 게이트", phase: "빌드", route: "pull-requests", agent: "Review Agent가 변경 검토", actions: "CI + TDD 게이트(테스트 먼저 확인) 통과 검사", human: "PR 검토 후 병합 승인", humanCheck: true, state: "대기" },
-  { n: 11, stage: "배포", phase: "운영", route: "releases", agent: "릴리스 노트 초안 생성", actions: "Staging 자동 배포 · Smoke Test", human: "Production 배포 승인", humanCheck: true, state: "대기" },
-  { n: 12, stage: "릴리스", phase: "운영", route: "releases", agent: "Release Note 정리", actions: "Release 자동 생성·태깅", human: "릴리스 최종 승인", humanCheck: true, state: "대기" },
+  { n: 1, stage: "자료 수집·분석", phase: "기획", route: "sources", agent: "등록된 자료에서 요구사항·충돌 자동 정리", agentName: "Analyzer Agent", model: "Claude Sonnet", duration: "~1분", actions: "자료 등록 시 분석 워크플로 트리거", human: "문서·GitHub Issue 등록", humanCheck: true, state: "완료" },
+  { n: 2, stage: "요구사항 인터뷰", phase: "기획", route: "interview", agent: "모호한 점을 질문하고 답변을 반영해 스펙 확정", agentName: "Interview Agent", model: "Claude Opus", duration: "대화형 · 사람 페이스", actions: "—", human: "질문에 답하고 결정", humanCheck: true, state: "완료" },
+  { n: 3, stage: "PRD 작성·Critic", phase: "기획", route: "prd", agent: "PRD 초안 생성 · Critic이 누락·충돌 점검·채점", agentName: "Planner · Critic Agent", model: "Claude Opus", duration: "~3분", actions: "PRD Critic 자동 실행", human: "PRD 내용 검토·승인", humanCheck: true, state: "완료" },
+  { n: 4, stage: "IA·디자인 시스템", phase: "설계", route: "ia", agent: "화면 구조(IA)·디자인 토큰 생성", agentName: "Design Agent", model: "Claude Sonnet", duration: "~4분", actions: "산출물 저장 → 저장소 커밋", human: "화면 구성·디자인 확인", humanCheck: true, state: "완료" },
+  { n: 5, stage: "작업 생성", phase: "설계", route: "tasks", agent: "PRD·설계를 작업으로 분해 · Issue 생성", agentName: "Planner Agent", model: "Claude Opus", duration: "~2분", actions: "Task Planner → GitHub Issue 동기화", human: "작업 계획 훑어보기 (선택)", humanCheck: false, state: "완료" },
+  { n: 6, stage: "외부 키 발급", phase: "빌드", route: "human-tasks", agent: "—", agentName: "—", model: "—", duration: "사람 대기", actions: "키 등록 감지 → 차단됐던 작업 자동 해제", human: "OAuth·외부 API 키 발급·등록 (휴먼태스크)", humanCheck: true, state: "진행 중" },
+  { n: 7, stage: "테스트 먼저 (TDD)", phase: "빌드", route: "tests", agent: "인수 기준을 테스트로 먼저 작성 (Red)", agentName: "Test Agent", model: "Claude Sonnet", duration: "~3분", actions: "테스트 실행 → 실패(Red) 확인", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 8, stage: "구현 (빌드)", phase: "빌드", route: "tasks", agent: "Sprint Go·Ship이 테스트를 통과시키며 구현 (Green)", agentName: "Sprint Go · Ship", model: "Claude Sonnet", duration: "작업당 ~8–12분", actions: "Agent 실행 → 브랜치 push → PR 생성", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 9, stage: "검증 (CI)", phase: "빌드", route: "runs", agent: "CI 실패 시 Repair Agent 자동 수정 (1회)", agentName: "Repair Agent", model: "Claude Sonnet", duration: "~5분", actions: "lint · typecheck · test · build · agent-review", human: "—", humanCheck: false, state: "진행 중" },
+  { n: 10, stage: "PR 검토·TDD 게이트", phase: "빌드", route: "pull-requests", agent: "Review Agent가 변경 검토", agentName: "Review Agent", model: "Claude Opus", duration: "~1분 + 사람 검토", actions: "CI + TDD 게이트(테스트 먼저 확인) 통과 검사", human: "PR 검토 후 병합 승인", humanCheck: true, state: "대기" },
+  { n: 11, stage: "배포", phase: "운영", route: "releases", agent: "릴리스 노트 초안 생성", agentName: "Release Agent", model: "Claude Sonnet", duration: "~3분 + 사람 승인", actions: "Staging 자동 배포 · Smoke Test", human: "Production 배포 승인", humanCheck: true, state: "대기" },
+  { n: 12, stage: "릴리스", phase: "운영", route: "releases", agent: "Release Note 정리", agentName: "Release Agent", model: "Claude Sonnet", duration: "~1분", actions: "Release 자동 생성·태깅", human: "릴리스 최종 승인", humanCheck: true, state: "대기" },
+]
+
+// 실제 운영 전 아직 연결돼야 하는 것들 (현재는 목업 프로토타입)
+export const FUTURE_INTEGRATION = [
+  { title: "백엔드 서버 · DB", desc: "프로젝트·작업·상태·산출물을 저장하고 조회하는 API와 데이터베이스" },
+  { title: "에이전트 실행 연결", desc: "각 Agent를 Claude API로 실제 실행하고 결과를 파이프라인에 반영" },
+  { title: "GitHub App · Actions", desc: "저장소 트리거, CI 워크플로, PR·브랜치 생성, 배포 잡 실행" },
+  { title: "실시간 상태 동기화", desc: "Actions·에이전트 실행 결과를 웹훅으로 받아 대시보드에 실시간 반영" },
+  { title: "Secret · 외부 키 보관", desc: "휴먼태스크에서 입력한 키를 안전한 Secret 저장소에 저장·주입" },
 ]

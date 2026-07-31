@@ -1,5 +1,5 @@
 import { Icon, Badge, Card, SectionTitle } from "../components/ui"
-import { ACTOR_SUMMARY, PIPELINE_STAGES, type PipelineStage } from "../data"
+import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage } from "../data"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -61,6 +61,28 @@ export default function Pipeline({ navigate }: { navigate: (r: string) => void }
           사람은 <b className="text-[#b47908]">사람 열</b>과 <b className="text-[#b47908]">휴먼태스크</b>만 챙기면 돼요. 나머지 단계는 에이전트와 GitHub Actions가 자동으로 진행하고, 사람 확인이 필요할 때만 알려줘요.
         </p>
       </div>
+
+      {/* 추후 실제 연동 (현재는 목업 프로토타입) */}
+      <Card className="p-5">
+        <div className="flex items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-blue-light text-blue"><Icon name="bolt" className="h-4.5 w-4.5" /></span>
+          <div>
+            <div className="flex items-center gap-2"><span className="text-[15px] font-bold text-text-primary">추후 구현 · 실제 연동</span><Badge tone="neutral">프로토타입</Badge></div>
+            <div className="text-[12px] text-text-tertiary">지금은 목업 데이터로 흐름을 보여줘요. 실제 운영하려면 아래 연동이 이어져야 해요.</div>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          {FUTURE_INTEGRATION.map((f, i) => (
+            <div key={f.title} className="flex items-start gap-2.5 rounded-[12px] border border-line p-3">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-surface-2 text-[11px] font-bold text-text-tertiary">{i + 1}</span>
+              <div>
+                <div className="text-[13px] font-bold text-text-primary">{f.title}</div>
+                <div className="text-[12px] leading-relaxed text-text-secondary">{f.desc}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </div>
   )
 }
@@ -79,14 +101,25 @@ function StageRow({ s, navigate }: { s: PipelineStage; navigate: (r: string) => 
             </span>
             <span className="text-[14px] font-bold text-text-primary group-hover:text-blue">{s.stage}</span>
           </div>
-          <div className="mt-1.5 flex items-center gap-1.5 pl-8">
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 pl-8">
             <Badge tone="neutral">{s.phase}</Badge>
             <Badge tone={stateTone as any}>{s.state}</Badge>
+            <span className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-semibold text-text-tertiary"><Icon name="runs" className="h-3 w-3" />{s.duration}</span>
           </div>
         </button>
       </td>
       {/* 에이전트 */}
-      <td className="px-4 py-4">{s.agent === "—" ? <Muted /> : <span className="text-text-secondary">{s.agent}</span>}</td>
+      <td className="px-4 py-4">
+        {s.agent === "—" ? <Muted /> : (
+          <div>
+            <div className="text-text-secondary">{s.agent}</div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px]">
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-light px-2 py-0.5 font-semibold text-purple"><Icon name="sparkle" className="h-3 w-3" />{s.agentName}</span>
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 font-medium text-text-tertiary">{s.model}</span>
+            </div>
+          </div>
+        )}
+      </td>
       {/* GitHub Actions */}
       <td className="px-4 py-4">{s.actions === "—" ? <Muted /> : <span className="text-text-secondary">{s.actions}</span>}</td>
       {/* 사람 */}
