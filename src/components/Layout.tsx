@@ -53,7 +53,7 @@ function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: (
       <button onClick={onMenu} className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary hover:bg-hover lg:hidden" aria-label="메뉴">
         <Icon name="menu" />
       </button>
-      <button onClick={() => navigate("repositories")} className="flex items-center gap-2">
+      <button onClick={() => navigate("projects")} className="flex items-center gap-2">
         <span className="flex h-8 w-8 items-center justify-center rounded-[10px] bg-blue text-white">
           <Icon name="flow" className="h-4.5 w-4.5" />
         </span>

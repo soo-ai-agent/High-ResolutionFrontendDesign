@@ -1,7 +1,7 @@
 import { useState, type ReactElement } from "react"
 import Layout from "./components/Layout"
 import Login from "./screens/Login"
-import Repositories from "./screens/Repositories"
+import Projects from "./screens/Projects"
 import Overview from "./screens/Overview"
 import Interview from "./screens/Interview"
 import { Sources, PRD, Critic, IA, ScreenList, ScreenDetail, Flow, DesignSystem } from "./screens/Design"
@@ -36,8 +36,8 @@ export default function App() {
     if (main) main.scrollTop = 0
   }
 
-  if (route === "login") return <Login onLogin={() => navigate("repositories")} />
-  if (route === "repositories") return <Repositories navigate={navigate} />
+  if (route === "login") return <Login onLogin={() => navigate("projects")} />
+  if (route === "projects") return <Projects navigate={navigate} />
 
   const render = SCREENS[route] ?? SCREENS.overview
   return (

@@ -30,6 +30,79 @@ export const PROJECT_REPOS = [
   { full: "sample-org / admin-infra", purpose: "인프라", branch: "main", progress: 40, tasks: 4, prs: 1, fails: 0, synced: false },
 ]
 
+// 최상위 분류는 '프로젝트'예요. 하나의 프로젝트가 여러 깃 저장소를 묶어요.
+// (진입 화면은 저장소가 아니라 이 프로젝트 목록을 보여줘요.)
+export type ProjectRepo = { name: string; purpose: string }
+export type ProjectItem = {
+  id: string
+  name: string
+  org: string
+  desc: string
+  stage: string
+  progress: number
+  repos: ProjectRepo[]
+  tasks: number
+  prs: number
+  fails: number
+  updated: string
+  synced: boolean
+}
+
+export const PROJECTS: ProjectItem[] = [
+  {
+    id: "P-01",
+    name: "커머스 어드민 리뉴얼",
+    org: "sample-org",
+    desc: "회원·콘텐츠 관리를 아우르는 관리자 도구를 프론트·백엔드·인프라 저장소로 나눠 개발하는 프로젝트",
+    stage: "구현",
+    progress: 62,
+    repos: [
+      { name: "admin-web", purpose: "프론트엔드" },
+      { name: "admin-api", purpose: "백엔드" },
+      { name: "admin-infra", purpose: "인프라" },
+    ],
+    tasks: 23, prs: 6, fails: 1, updated: "3분 전", synced: true,
+  },
+  {
+    id: "P-02",
+    name: "결제 플랫폼 고도화",
+    org: "sample-org",
+    desc: "결제 코어와 결제 웹을 분리해 안정성과 확장성을 높이는 프로젝트",
+    stage: "검증",
+    progress: 82,
+    repos: [
+      { name: "payments-core", purpose: "백엔드" },
+      { name: "payments-web", purpose: "프론트엔드" },
+    ],
+    tasks: 8, prs: 2, fails: 0, updated: "1시간 전", synced: true,
+  },
+  {
+    id: "P-03",
+    name: "알림 서비스 신규 구축",
+    org: "sample-org",
+    desc: "이메일·푸시·인앱 알림을 통합 관리하는 신규 서비스",
+    stage: "작업 생성",
+    progress: 34,
+    repos: [
+      { name: "notify-service", purpose: "백엔드" },
+      { name: "notify-web", purpose: "프론트엔드" },
+    ],
+    tasks: 21, prs: 1, fails: 2, updated: "2일 전", synced: false,
+  },
+  {
+    id: "P-04",
+    name: "디자인 시스템 배포",
+    org: "sample-org",
+    desc: "공용 디자인 토큰과 컴포넌트를 패키지로 배포하는 프로젝트",
+    stage: "릴리스",
+    progress: 100,
+    repos: [
+      { name: "design-tokens", purpose: "공용 패키지" },
+    ],
+    tasks: 0, prs: 0, fails: 0, updated: "어제", synced: true,
+  },
+]
+
 export type Phase = {
   key: string
   label: string
@@ -138,15 +211,17 @@ export const TASKS: Task[] = [
   { id: "T-043", title: "대시보드 카드 컴포넌트", domain: "frontend", agent: "Frontend Agent", risk: "낮음", deps: "완료", screen: "ADM-001", issue: "#70", pr: "#79", check: "CI 성공", status: "완료", tdd: "완료" },
 ]
 
+// tddGate: 구현 전에 테스트가 먼저 작성됐는지 검증하는 병합 게이트예요.
 export const PRS = [
-  { num: "#83", title: "T-045 회원 목록 조회 API", task: "T-045", files: 7, risk: "중간", ci: "실패", ai: "경고 1", fixes: "1/2", mergeable: "차단", status: "수정 필요" },
-  { num: "#84", title: "T-046 회원 상세 화면 구현", task: "T-046", files: 12, risk: "낮음", ci: "성공", ai: "통과", fixes: "0/2", mergeable: "병합 가능", status: "검토 중" },
-  { num: "#85", title: "T-049 콘텐츠 관리 목록 API", task: "T-049", files: 4, risk: "낮음", ci: "진행 중", ai: "대기", fixes: "0/2", mergeable: "대기", status: "Draft" },
-  { num: "#81", title: "T-041 알림 배너 컴포넌트", task: "T-041", files: 3, risk: "낮음", ci: "성공", ai: "통과", fixes: "0/2", mergeable: "병합 가능", status: "검토 중" },
+  { num: "#83", title: "T-045 회원 목록 조회 API", task: "T-045", files: 7, risk: "중간", ci: "실패", ai: "경고 1", fixes: "1/2", mergeable: "차단", status: "수정 필요", tddGate: "통과" },
+  { num: "#84", title: "T-046 회원 상세 화면 구현", task: "T-046", files: 12, risk: "낮음", ci: "성공", ai: "통과", fixes: "0/2", mergeable: "병합 가능", status: "검토 중", tddGate: "통과" },
+  { num: "#85", title: "T-049 콘텐츠 관리 목록 API", task: "T-049", files: 4, risk: "낮음", ci: "진행 중", ai: "대기", fixes: "0/2", mergeable: "차단", status: "Draft", tddGate: "실패" },
+  { num: "#81", title: "T-041 알림 배너 컴포넌트", task: "T-041", files: 3, risk: "낮음", ci: "성공", ai: "통과", fixes: "0/2", mergeable: "병합 가능", status: "검토 중", tddGate: "통과" },
 ]
 
 export const PR_CHECKS = [
   { name: "spec-validation", status: "성공" },
+  { name: "tests-first", status: "성공" },
   { name: "path-scope", status: "성공" },
   { name: "lint", status: "성공" },
   { name: "typecheck", status: "성공" },

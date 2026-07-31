@@ -216,16 +216,16 @@ export function PullRequests({ navigate }: { navigate: (r: string) => void }) {
       <div className="flex flex-wrap gap-3">
         <Metric label="Draft" value="1" />
         <Metric label="검토 중" value="2" tone="blue" />
-        <Metric label="수정 필요" value="1" tone="warning" />
         <Metric label="병합 가능" value="2" tone="success" />
         <Metric label="Check 실패" value="1" tone="error" />
+        <Metric label="TDD 게이트 실패" value="1" tone="error" />
       </div>
 
       <Card className="overflow-hidden">
         <table className="w-full">
           <thead>
             <tr className="border-b border-line bg-surface-2 text-left text-[12px] font-semibold text-text-tertiary">
-              {["PR", "제목", "작업", "파일", "위험도", "CI", "AI 검토", "수정", "병합", "상태"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}
+              {["PR", "제목", "작업", "파일", "위험도", "CI", "TDD", "AI 검토", "병합", "상태"].map((h) => <th key={h} className="px-4 py-3">{h}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -237,8 +237,8 @@ export function PullRequests({ navigate }: { navigate: (r: string) => void }) {
                 <td className="px-4 py-4 text-text-secondary">{p.files}</td>
                 <td className="px-4 py-4">{p.risk}</td>
                 <td className="px-4 py-4"><Badge>{`CI ${p.ci}`}</Badge></td>
+                <td className="px-4 py-4"><Badge tone={p.tddGate === "실패" ? "error" : "success"}>{p.tddGate}</Badge></td>
                 <td className="px-4 py-4"><Badge>{p.ai}</Badge></td>
-                <td className="px-4 py-4 text-text-secondary">{p.fixes}</td>
                 <td className="px-4 py-4"><Badge>{p.mergeable}</Badge></td>
                 <td className="px-4 py-4"><Badge>{p.status}</Badge></td>
               </tr>
@@ -249,14 +249,18 @@ export function PullRequests({ navigate }: { navigate: (r: string) => void }) {
 
       <Drawer open={!!sel} onClose={() => setSel(null)} title={sel && <span className="font-mono">{sel.num} {sel.title}</span>}
         footer={
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="danger" onClick={() => navigate("runs")}>AI 수정 요청</Button>
-            <Button variant="primary">병합</Button>
+          <div>
+            {sel?.tddGate === "실패" && <div className="mb-2 text-center text-[12px] font-semibold text-error">TDD 게이트를 통과해야 병합할 수 있어요.</div>}
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="danger" onClick={() => navigate("runs")}>AI 수정 요청</Button>
+              <Button variant="primary" disabled={sel?.tddGate === "실패" || sel?.mergeable === "차단"}>병합</Button>
+            </div>
           </div>
         }>
         {sel && (
           <div className="space-y-5">
-            <div className="flex flex-wrap gap-2"><Badge>{`CI ${sel.ci}`}</Badge><Badge>{sel.mergeable}</Badge><Badge tone="neutral">수정 {sel.fixes}</Badge></div>
+            <div className="flex flex-wrap gap-2"><Badge>{`CI ${sel.ci}`}</Badge><Badge tone={sel.tddGate === "실패" ? "error" : "success"}>{`TDD ${sel.tddGate}`}</Badge><Badge>{sel.mergeable}</Badge><Badge tone="neutral">수정 {sel.fixes}</Badge></div>
+            <TddGate gate={sel.tddGate} />
             <Field title="관련 작업 완료 조건">회원 목록 API + 단위 테스트 통과, 페이지네이션 지원</Field>
 
             <div>
@@ -466,6 +470,37 @@ function RunLine({ id, text, tone }: { id: string; text: string; tone?: string }
     <div className="flex items-center gap-2 rounded-[10px] bg-surface-2 px-3 py-2 text-[12px]">
       <span className="font-mono font-bold text-text-secondary">{id}</span>
       <span className={tone === "error" ? "text-error" : "text-text-secondary"}>{text}</span>
+    </div>
+  )
+}
+
+// PR 병합 전 TDD 게이트 — 구현보다 테스트가 먼저 작성됐는지 검증해요.
+function TddGate({ gate }: { gate: string }) {
+  const fail = gate === "실패"
+  const items = [
+    { label: "테스트 먼저 작성 (Red 확인)", ok: !fail },
+    { label: "인수 기준 테스트 커버", ok: !fail },
+    { label: "Red → Green 전이 기록", ok: !fail },
+  ]
+  return (
+    <div className={`rounded-[12px] border p-4 ${fail ? "border-error/30 bg-error-light" : "border-success/30 bg-success-light"}`}>
+      <div className="flex items-center justify-between">
+        <span className="flex items-center gap-1.5 text-[13px] font-bold" style={{ color: fail ? "#f04452" : "#00a86b" }}>
+          <Icon name="test" className="h-4 w-4" />TDD 게이트
+        </span>
+        <Badge tone={fail ? "error" : "success"}>{fail ? "실패 · 병합 차단" : "통과"}</Badge>
+      </div>
+      <div className="mt-3 space-y-1.5">
+        {items.map((it) => (
+          <div key={it.label} className="flex items-center gap-2 text-[12px]">
+            <span className={`flex h-4 w-4 items-center justify-center rounded-full text-white ${it.ok ? "bg-success" : "bg-error"}`}>
+              <Icon name={it.ok ? "check" : "close"} className="h-2.5 w-2.5" />
+            </span>
+            <span className={it.ok ? "text-text-secondary" : "font-semibold text-error"}>{it.label}</span>
+          </div>
+        ))}
+      </div>
+      {fail && <p className="mt-2 text-[12px] leading-relaxed text-error">구현 커밋이 테스트보다 먼저 올라와 TDD 순서를 위반했어요. 테스트를 먼저 작성해 실패(Red)를 확인한 뒤 다시 요청하세요.</p>}
     </div>
   )
 }
