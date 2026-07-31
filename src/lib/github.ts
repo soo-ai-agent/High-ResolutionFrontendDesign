@@ -162,6 +162,14 @@ export async function mentionClaude(owner: string, repo: string, number: number,
   return (await res.json()) as CommentResult
 }
 
+// ---- 백필(초기 동기화) — 현재 이슈·PR·Actions 상태를 GitHub 에서 당겨 미러에 채워요 ----
+export type BackfillResult = { repo: string; issues: number; pulls: number; runs: number; truncated: string[] }
+
+export async function backfill(owner: string, repo: string, include?: string[]): Promise<BackfillResult> {
+  const res = await call("/backfill", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, include }) })
+  return (await res.json()) as BackfillResult
+}
+
 // ---- 저장소 웹훅(수신) 관리 — 실제 GitHub 저장소에 서버 수신 웹훅을 등록/조회/핑 ----
 export type GHHook = { id: number; active: boolean; events: string[]; url: string; insecure_ssl: string; last_status: string | null; last_code: number | null; updated_at: string }
 

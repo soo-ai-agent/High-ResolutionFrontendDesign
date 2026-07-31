@@ -6,6 +6,7 @@
 //
 // 참고: 제한된 네트워크에서는 서버의 outbound 가 프록시를 거쳐야 할 수 있어요.
 // 그 경우 undici ProxyAgent(HTTPS_PROXY)를 fetch dispatcher 로 설정하면 돼요.
+import { db } from "./db.mjs"
 
 const API = "https://api.github.com"
 const ghHeaders = (token) => ({
@@ -74,6 +75,42 @@ const mapHook = (h) => ({ id: h.id, active: h.active, events: h.events ?? [], ur
 
 // 웹훅에 등록할 기본 이벤트 (이슈·PR·Actions·푸시). projects_v2_item 은 조직 레벨이라 여기서 못 걸어요.
 const DEFAULT_HOOK_EVENTS = ["issues", "pull_request", "workflow_run", "push"]
+
+// 백필 매핑 + 미러 반영 (순수 로직 — 네트워크와 분리해 테스트하기 쉬워요).
+// 이미 가져온 GitHub REST 배열을 받아 미러 upsert 형태로 변환·저장하고 카운트를 돌려줘요.
+export function applyBackfill(full, { include = ["issues", "pulls", "runs"], issuesData = [], pullsData = [], runsData = [] } = {}) {
+  const result = { repo: full, issues: 0, pulls: 0, runs: 0, truncated: [] }
+
+  if (include.includes("issues")) {
+    const arr = Array.isArray(issuesData) ? issuesData : []
+    const only = arr.filter((i) => !i.pull_request) // PR 은 issues 응답에도 섞여 나와요
+    for (const i of only) {
+      db.upsertIssue({ repo: full, number: i.number, title: i.title, state: i.state, labels: (i.labels || []).map((l) => (typeof l === "string" ? l : l.name)), user: i.user?.login ?? null, html_url: i.html_url, updated_at: i.updated_at, node_id: i.node_id })
+    }
+    result.issues = only.length
+    if (arr.length === 100) result.truncated.push("issues") // 첫 페이지만
+  }
+
+  if (include.includes("pulls")) {
+    const arr = Array.isArray(pullsData) ? pullsData : []
+    for (const pr of arr) {
+      db.upsertPull({ repo: full, number: pr.number, title: pr.title, state: pr.state, merged: !!pr.merged_at, draft: !!pr.draft, user: pr.user?.login ?? null, html_url: pr.html_url, updated_at: pr.updated_at, node_id: pr.node_id })
+    }
+    result.pulls = arr.length
+    if (arr.length === 100) result.truncated.push("pulls")
+  }
+
+  if (include.includes("runs")) {
+    const arr = Array.isArray(runsData) ? runsData : []
+    for (const w of arr) {
+      db.upsertRun({ repo: full, id: w.id, name: w.name, status: w.status, conclusion: w.conclusion, head_branch: w.head_branch, html_url: w.html_url, updated_at: w.updated_at })
+    }
+    result.runs = arr.length
+    if (arr.length === 50) result.truncated.push("runs")
+  }
+
+  return result
+}
 
 /** /api/github/* 요청을 처리해요. 처리했으면 true, 아니면 false 를 반환해요. */
 export async function handleGithub(req, res) {
@@ -210,6 +247,38 @@ export async function handleGithub(req, res) {
       const d = await r.json()
       const content = d.encoding === "base64" && typeof d.content === "string" ? Buffer.from(d.content, "base64").toString("utf-8") : d.content ?? ""
       send(res, 200, { content })
+      return true
+    }
+
+    // ---- 백필: 현재 이슈·PR·Actions 상태를 GitHub 에서 당겨 미러에 채워요 ----
+    // 웹훅은 앞으로의 이벤트만 주므로, 연결 직후 한 번 실행해 미러를 현재 상태로 맞춰요.
+    if (p === "/api/github/backfill" && req.method === "POST") {
+      const body = await readJson(req)
+      const owner = body.owner
+      const repo = body.repo
+      if (!owner || !repo) {
+        send(res, 400, { error: "owner·repo 가 필요해요." })
+        return true
+      }
+      const full = `${owner}/${repo}`
+      const include = Array.isArray(body.include) && body.include.length ? body.include : ["issues", "pulls", "runs"]
+
+      // 저장소 메타(실패해도 백필은 계속)
+      try {
+        const r = await (await gh(`/repos/${owner}/${repo}`)).json()
+        db.upsertRepo({ full_name: r.full_name, private: r.private, default_branch: r.default_branch, updated_at: r.updated_at })
+      } catch {
+        // 무시
+      }
+
+      // GitHub 에서 현재 상태를 당겨와요 (선택 항목만).
+      const issuesData = include.includes("issues") ? await (await gh(`/repos/${owner}/${repo}/issues?state=all&per_page=100`)).json() : []
+      const pullsData = include.includes("pulls") ? await (await gh(`/repos/${owner}/${repo}/pulls?state=all&per_page=100`)).json() : []
+      const runsData = include.includes("runs") ? (await (await gh(`/repos/${owner}/${repo}/actions/runs?per_page=50`)).json()).workflow_runs : []
+
+      const result = applyBackfill(full, { include, issuesData, pullsData, runsData })
+      db.logEvent({ id: null, event: "backfill", action: "sync", repo: full, at: new Date().toISOString(), verified: true, summary: `backfill: ${result.issues} issues · ${result.pulls} PRs · ${result.runs} runs` })
+      send(res, 200, result)
       return true
     }
 

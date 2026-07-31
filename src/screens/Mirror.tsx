@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, Tabs, EmptyState, Modal } from "../components/ui"
 import * as mirror from "../lib/mirror"
 import type { MirrorIssue, MirrorPull, MirrorRun, MirrorEvent, MirrorSummary } from "../lib/mirror"
-import { useGitHub, createIssue, mentionClaude, listHooks, createHook, pingHook } from "../lib/github"
+import { useGitHub, createIssue, mentionClaude, listHooks, createHook, pingHook, backfill } from "../lib/github"
 import type { GHHook } from "../lib/github"
 
 const STAGE_OPTS = ["초안", "계획", "빌드 중", "검토", "완료"]
@@ -40,6 +40,10 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
   const [labels, setLabels] = useState("")
   // @claude 폼
   const [prompt, setPrompt] = useState("")
+  // 백필(초기 동기화) 폼
+  const [syncing, setSyncing] = useState(false)
+  const [syncRepo, setSyncRepo] = useState("")
+  const [syncInc, setSyncInc] = useState<Record<string, boolean>>({ issues: true, pulls: true, runs: true })
 
   const load = async () => {
     setLoading(true)
@@ -74,6 +78,32 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
   const openCreate = () => {
     setRepoInput(issues[0]?.repo ?? "")
     setCreating(true)
+  }
+
+  const openSync = () => {
+    setSyncRepo(issues[0]?.repo ?? "")
+    setWriteErr("")
+    setSyncing(true)
+  }
+
+  const submitSync = async () => {
+    const { owner, repo } = splitRepo(syncRepo.trim())
+    if (!owner || !repo) return
+    const include = Object.entries(syncInc).filter(([, v]) => v).map(([k]) => k)
+    if (include.length === 0) return
+    setBusy(true)
+    setWriteErr("")
+    try {
+      const r = await backfill(owner, repo, include)
+      const trunc = r.truncated.length ? ` · 일부는 첫 페이지만 불러왔어요(${r.truncated.join(", ")})` : ""
+      setWriteMsg({ text: `백필 완료 — 이슈 ${r.issues} · PR ${r.pulls} · Actions ${r.runs}${trunc}`, url: `https://github.com/${owner}/${repo}` })
+      setSyncing(false)
+      await load()
+    } catch (e) {
+      setWriteErr(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
   }
 
   const submitIssue = async () => {
@@ -130,6 +160,7 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
         action={
           <div className="flex gap-2">
             <Button icon={<Icon name="sync" className="h-4 w-4" />} onClick={load} loading={loading}>새로고침</Button>
+            <Button icon={<Icon name="download" className="h-4 w-4" />} onClick={openSync}>지금 동기화</Button>
             <Button variant="primary" icon={<Icon name="plus" className="h-4.5 w-4.5" />} onClick={openCreate}>이슈 생성</Button>
           </div>
         }
@@ -162,8 +193,13 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
       {isEmpty && !loading ? (
         <EmptyState
           title="아직 미러된 데이터가 없어요."
-          desc="GitHub 저장소 Webhook을 서버의 /api/webhook/github 로 설정하면 이슈·PR·Actions 이벤트가 실시간으로 나타나요. 위 ‘이슈 생성’으로 첫 이슈를 만들 수도 있어요."
-          action={<Button variant="primary" icon={<Icon name="plus" className="h-4.5 w-4.5" />} onClick={openCreate}>이슈 생성</Button>}
+          desc="‘지금 동기화’로 저장소의 현재 이슈·PR·Actions를 바로 불러오거나, Webhook(/api/webhook/github)을 연결해 앞으로의 이벤트를 실시간으로 받을 수 있어요."
+          action={
+            <div className="flex gap-2">
+              <Button variant="primary" icon={<Icon name="download" className="h-4.5 w-4.5" />} onClick={openSync}>지금 동기화</Button>
+              <Button icon={<Icon name="plus" className="h-4.5 w-4.5" />} onClick={openCreate}>이슈 생성</Button>
+            </div>
+          }
         />
       ) : (
         <>
@@ -213,6 +249,34 @@ export default function Mirror({ navigate }: { navigate: (r: string) => void }) 
           <p className="text-[13px] text-text-secondary">이 {claudeTarget?.kind}에 <b className="text-purple">@claude</b> 코멘트를 남겨 Claude GitHub Action을 트리거해요.</p>
           <Field label="요청 내용"><textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} autoFocus rows={4} placeholder="예: 이 이슈의 로그인 실패 흐름을 TDD로 구현해줘" className="w-full rounded-[10px] border border-line bg-surface p-3 text-[14px] outline-none focus:border-blue" /></Field>
           <div className="rounded-[10px] bg-surface-2 p-2.5 font-mono text-[12px] text-text-secondary">@claude {prompt || "…"}</div>
+          {!connected && <ConnectHint navigate={navigate} />}
+          {writeErr && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{writeErr}</div>}
+        </div>
+      </Modal>
+
+      {/* 백필(초기 동기화) — 현재 상태를 GitHub 에서 당겨와요 */}
+      <Modal
+        open={syncing}
+        onClose={() => setSyncing(false)}
+        title="저장소에서 지금 불러오기 (백필)"
+        footer={
+          <>
+            <Button onClick={() => setSyncing(false)}>취소</Button>
+            <Button variant="primary" onClick={submitSync} loading={busy} disabled={!syncRepo.trim() || !Object.values(syncInc).some(Boolean)}>불러오기</Button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-left">
+          <p className="text-[13px] text-text-secondary">웹훅은 <b className="text-text-primary">앞으로의</b> 이벤트만 미러해요. <b className="text-text-primary">지금 상태</b>는 이 백필로 한 번 불러와 미러를 맞춰요.</p>
+          <Field label="저장소 (owner/repo)"><input value={syncRepo} onChange={(e) => setSyncRepo(e.target.value)} autoFocus placeholder="soo-ai-agent/high-resolutionfrontenddesign" className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" /></Field>
+          <div>
+            <label className="mb-1.5 block text-[13px] font-bold text-text-primary">불러올 항목</label>
+            <div className="flex flex-wrap gap-2">
+              {([["issues", "이슈"], ["pulls", "PR"], ["runs", "Actions"]] as const).map(([k, label]) => (
+                <button key={k} type="button" onClick={() => setSyncInc((s) => ({ ...s, [k]: !s[k] }))} className={`rounded-full px-3 py-1.5 text-[12px] font-semibold ${syncInc[k] ? "bg-blue text-white" : "border border-line bg-surface text-text-secondary hover:bg-hover"}`}>{label}</button>
+              ))}
+            </div>
+          </div>
           {!connected && <ConnectHint navigate={navigate} />}
           {writeErr && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{writeErr}</div>}
         </div>
