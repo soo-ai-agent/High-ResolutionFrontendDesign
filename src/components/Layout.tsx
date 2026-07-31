@@ -23,7 +23,7 @@ const MENU = [
     { key: "tests", label: "테스트", icon: "test" },
   ] },
   { group: "운영", items: [
-    { key: "manual-tasks", label: "수동 작업", icon: "manual" },
+    { key: "human-tasks", label: "휴먼태스크", icon: "hand" },
     { key: "releases", label: "배포 및 릴리스", icon: "rocket" },
     { key: "settings", label: "설정", icon: "settings" },
   ] },

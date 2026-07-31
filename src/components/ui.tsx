@@ -41,11 +41,12 @@ export function Dot({ tone }: { tone: Tone }) {
 
 // Human vs AI ownership. Kept visually distinct everywhere so it's always
 // obvious who is responsible for a step — a person or an AI agent.
-export function RoleChip({ owner, label }: { owner: "human" | "ai" | "both"; label?: string }) {
+export function RoleChip({ owner, label }: { owner: "human" | "ai" | "both" | "auto"; label?: string }) {
   const map = {
     human: { text: "사람", icon: "user", cls: "bg-warning-light text-[#b47908]" },
     ai: { text: "AI 에이전트", icon: "sparkle", cls: "bg-purple-light text-purple" },
     both: { text: "사람 + AI", icon: "handoff", cls: "bg-blue-light text-blue" },
+    auto: { text: "자동", icon: "bolt", cls: "bg-success-light text-success" },
   }[owner]
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-bold leading-none ${map.cls}`}>
@@ -292,6 +293,9 @@ const PATHS: Record<string, ReactNode> = {
   sparkle: <><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z" /><path d="M18 4v3M20 5.5h-3" /></>,
   handoff: <><path d="M7 8h9l-2.5-2.5M17 16H8l2.5 2.5" /></>,
   chat: <><path d="M4 5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H9l-4 4V5Z" /><path d="M8 8.5h8M8 12h5" /></>,
+  bolt: <path d="M13 2 4 14h7l-1 8 9-12h-7z" />,
+  key: <><circle cx="7.5" cy="15.5" r="4.5" /><path d="M10.8 12.2 20 3m-3.5 0 3 3-3 3" /></>,
+  hand: <><path d="M7 11V6a1.5 1.5 0 0 1 3 0v4M10 10V4.5a1.5 1.5 0 0 1 3 0V10M13 9.5a1.5 1.5 0 0 1 3 0V13" /><path d="M16 11a1.5 1.5 0 0 1 3 0v3a6 6 0 0 1-6 6h-1.5a5 5 0 0 1-3.8-1.7L4 16.2a1.5 1.5 0 0 1 2.2-2l1.3 1.3V11" /></>,
 }
 
 export function Icon({ name, className = "h-5 w-5" }: { name: string; className?: string }) {

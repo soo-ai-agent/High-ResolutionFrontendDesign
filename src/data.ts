@@ -21,7 +21,7 @@ export const PROJECT = {
   stage: "구현",
 }
 
-export type Role = "human" | "ai" | "both"
+export type Role = "human" | "ai" | "both" | "auto"
 
 // Repositories that belong to the single project.
 export const PROJECT_REPOS = [
@@ -167,7 +167,7 @@ export const RECENT_RUNS = [
 export const CHECKLIST = [
   { label: "실패한 CI", value: "1건", tone: "error", to: "runs" },
   { label: "검토 중인 PR", value: "3건", tone: "warning", to: "pull-requests" },
-  { label: "미등록 Secret", value: "2건", tone: "warning", to: "manual-tasks" },
+  { label: "미등록 외부 키", value: "6건", tone: "warning", to: "human-tasks" },
   { label: "Production 승인 대기", value: "1건", tone: "purple", to: "releases" },
 ]
 
@@ -413,4 +413,135 @@ export const AUTOMATION = [
   { label: "Staging 자동 배포", on: true },
   { label: "Production 자동 배포", on: false, danger: true },
   { label: "Release 자동 생성", on: true },
+]
+
+// ===== 휴먼태스크 (사람 전용 작업) =====
+// AI가 대신할 수 없는 외부 계정·키 발급, 서비스 등록, 배포 승인만 따로 모아요.
+// 사람은 이 목록만 처리하면 되고, 나머지는 모두 AI가 자동으로 진행해요.
+export type ExternalKey = { name: string; desc: string; site: string; docs?: string; state: "미등록" | "등록됨" }
+export type HumanTask = {
+  id: string
+  domain: string
+  title: string
+  phase: string
+  status: "대기" | "진행 중" | "완료"
+  purpose: string
+  keys: ExternalKey[]
+  manual: string
+  checklist: { text: string; done: boolean }[]
+  blocks: string
+}
+
+export const HUMAN_TASKS: HumanTask[] = [
+  {
+    id: "T-056", domain: "auth", title: "카카오 OAuth 등록", phase: "외부 키 발급", status: "대기",
+    purpose: "카카오 로그인을 위해 REST API 키와 Client Secret을 발급받아 등록해요.",
+    keys: [
+      { name: "KAKAO_REST_API_KEY", desc: "카카오 디벨로퍼스 앱 REST API 키", site: "https://developers.kakao.com", docs: "https://developers.kakao.com/docs", state: "미등록" },
+      { name: "KAKAO_CLIENT_SECRET", desc: "카카오 로그인 Client Secret (보안 강화 시)", site: "https://developers.kakao.com", state: "미등록" },
+    ],
+    manual: "카카오 디벨로퍼스 앱 생성 후 REST API 키 발급 + Redirect URI 설정, platform 등록. KAKAO_REST_API_KEY / KAKAO_CLIENT_SECRET 입력.",
+    checklist: [
+      { text: "카카오 디벨로퍼스 앱 생성", done: false },
+      { text: "platform(Web) 등록 및 Redirect URI 설정", done: false },
+      { text: "REST API 키 · Client Secret 입력", done: false },
+    ],
+    blocks: "T-030 카카오 세션 처리, 로그인 플로우",
+  },
+  {
+    id: "T-052", domain: "vehicles", title: "CODEF API 키 발급", phase: "외부 키 발급", status: "대기",
+    purpose: "차량 정보 조회를 위한 CODEF API 키를 발급받아요.",
+    keys: [
+      { name: "CODEF_CLIENT_ID", desc: "CODEF OAuth Client ID", site: "https://codef.io", docs: "https://developer.codef.io", state: "미등록" },
+      { name: "CODEF_CLIENT_SECRET", desc: "CODEF OAuth Client Secret", site: "https://codef.io", state: "미등록" },
+    ],
+    manual: "CODEF 콘솔에서 서비스 신청 후 클라이언트 정보 발급.",
+    checklist: [{ text: "CODEF 계정 생성", done: false }, { text: "서비스 신청·승인", done: false }, { text: "클라이언트 정보 입력", done: false }],
+    blocks: "차량 정보 조회 API",
+  },
+  {
+    id: "T-053", domain: "matching", title: "네이버 지도 API 등록", phase: "외부 키 발급", status: "대기",
+    purpose: "차량 위치·매칭을 위한 네이버 지도 API를 등록해요.",
+    keys: [{ name: "NCP_MAPS_CLIENT_ID", desc: "네이버 클라우드 Maps Client ID", site: "https://console.ncloud.com", state: "미등록" }],
+    manual: "NCP 콘솔에서 Maps 이용 신청 후 Client ID 발급, 서비스 URL 등록.",
+    checklist: [{ text: "Maps 이용 신청", done: false }, { text: "서비스 URL 등록", done: false }, { text: "Client ID 입력", done: false }],
+    blocks: "지도·매칭 기능",
+  },
+  {
+    id: "T-054", domain: "notification", title: "NCP SENS 키 발급", phase: "외부 키 발급", status: "대기",
+    purpose: "알림(SMS·알림톡) 발송을 위한 NCP SENS 키를 발급해요.",
+    keys: [
+      { name: "NCP_SENS_ACCESS_KEY", desc: "NCP SENS Access Key", site: "https://console.ncloud.com", state: "미등록" },
+      { name: "NCP_SENS_SECRET_KEY", desc: "NCP SENS Secret Key", site: "https://console.ncloud.com", state: "미등록" },
+    ],
+    manual: "NCP SENS 프로젝트 생성 후 인증키 발급, 발신번호 등록.",
+    checklist: [{ text: "SENS 프로젝트 생성", done: false }, { text: "발신번호 등록", done: false }, { text: "인증키 입력", done: false }],
+    blocks: "알림 발송",
+  },
+  {
+    id: "T-055", domain: "vehicles", title: "NCP OCR API 키 발급", phase: "외부 키 발급", status: "대기",
+    purpose: "차량 서류 OCR을 위한 NCP CLOVA OCR 키를 발급해요.",
+    keys: [{ name: "NCP_OCR_SECRET", desc: "NCP CLOVA OCR Secret", site: "https://console.ncloud.com", state: "미등록" }],
+    manual: "CLOVA OCR 도메인 생성 후 Secret 발급.",
+    checklist: [{ text: "OCR 도메인 생성", done: false }, { text: "Secret 입력", done: false }],
+    blocks: "서류 검수 자동화",
+  },
+  {
+    id: "T-057", domain: "infra", title: "Vercel 등록", phase: "외부 키 발급", status: "진행 중",
+    purpose: "프론트엔드 배포를 위한 Vercel 프로젝트를 연결해요.",
+    keys: [{ name: "VERCEL_TOKEN", desc: "Vercel 배포 토큰", site: "https://vercel.com/account/tokens", state: "등록됨" }],
+    manual: "Vercel 프로젝트 생성 후 GitHub 연결, 배포 토큰 발급.",
+    checklist: [{ text: "Vercel 프로젝트 생성", done: true }, { text: "GitHub 저장소 연결", done: true }, { text: "배포 토큰 입력", done: false }],
+    blocks: "프론트엔드 배포",
+  },
+  {
+    id: "T-065", domain: "release", title: "production 배포 승인", phase: "릴리즈", status: "대기",
+    purpose: "최종 산출물을 production에 배포하도록 사람이 최종 승인해요.",
+    keys: [],
+    manual: "필수 Check 통과 확인 후 production 배포를 승인.",
+    checklist: [{ text: "필수 Check 통과 확인", done: false }, { text: "배포 승인", done: false }],
+    blocks: "릴리스 생성",
+  },
+]
+
+// ===== 빌드 보드 (단계 × 도메인) =====
+// 스키마 → 프론트엔드 → 백엔드 → 외부 키 발급 → QA → 릴리즈 순으로 빌드해요.
+// 각 작업이 자동/AI/사람 중 누구의 몫인지 태그로 구분해, 사람은 자기 것만 신경 쓰면 돼요.
+export const BUILD_PHASES = ["스키마", "프론트엔드", "백엔드", "외부 키 발급", "QA", "릴리즈"]
+export const BUILD_DOMAINS = ["admin", "auth", "chat", "vehicles", "matching", "notification", "infra", "release"]
+
+export type BuildRole = "자동" | "ai" | "사람"
+export type BuildTask = { id: string; domain: string; phase: string; title: string; role: BuildRole; status: "대기" | "진행 중" | "완료" }
+
+export const BUILD_TASKS: BuildTask[] = [
+  // 스키마 (자동 생성)
+  { id: "T-001", domain: "auth", phase: "스키마", title: "사용자·권한 테이블", role: "자동", status: "완료" },
+  { id: "T-007", domain: "chat", phase: "스키마", title: "채팅·신고 테이블", role: "자동", status: "완료" },
+  { id: "T-002", domain: "vehicles", phase: "스키마", title: "차량·매물 테이블", role: "자동", status: "완료" },
+  // 프론트엔드 (AI 구현)
+  { id: "T-026", domain: "admin", phase: "프론트엔드", title: "관리자 대시보드 화면", role: "ai", status: "진행 중" },
+  { id: "T-027", domain: "admin", phase: "프론트엔드", title: "회원 관리 화면", role: "ai", status: "대기" },
+  { id: "T-028", domain: "admin", phase: "프론트엔드", title: "차량 검수 관리 화면", role: "ai", status: "대기" },
+  { id: "T-009", domain: "auth", phase: "프론트엔드", title: "로그인 화면", role: "ai", status: "완료" },
+  { id: "T-010", domain: "auth", phase: "프론트엔드", title: "회원가입 화면", role: "ai", status: "진행 중" },
+  { id: "T-011", domain: "auth", phase: "프론트엔드", title: "인증 콜백 화면", role: "ai", status: "대기" },
+  { id: "T-024", domain: "chat", phase: "프론트엔드", title: "채팅 목록 화면", role: "ai", status: "대기" },
+  { id: "T-025", domain: "chat", phase: "프론트엔드", title: "채팅방 화면", role: "ai", status: "대기" },
+  // 백엔드 (AI 구현)
+  { id: "T-045", domain: "admin", phase: "백엔드", title: "회원 관리 API", role: "ai", status: "진행 중" },
+  { id: "T-046", domain: "admin", phase: "백엔드", title: "차량 검수 API", role: "ai", status: "대기" },
+  { id: "T-047", domain: "admin", phase: "백엔드", title: "딜러 승인 API", role: "ai", status: "대기" },
+  { id: "T-030", domain: "auth", phase: "백엔드", title: "카카오 세션 처리", role: "ai", status: "대기" },
+  { id: "T-031", domain: "auth", phase: "백엔드", title: "권한 가드", role: "ai", status: "대기" },
+  { id: "T-043", domain: "chat", phase: "백엔드", title: "채팅 메시지 처리", role: "ai", status: "대기" },
+  // 외부 키 발급 (사람 전용 = 휴먼태스크)
+  { id: "T-056", domain: "auth", phase: "외부 키 발급", title: "카카오 OAuth 등록", role: "사람", status: "대기" },
+  { id: "T-052", domain: "vehicles", phase: "외부 키 발급", title: "CODEF API 키 발급", role: "사람", status: "대기" },
+  { id: "T-053", domain: "matching", phase: "외부 키 발급", title: "네이버 지도 API 등록", role: "사람", status: "대기" },
+  { id: "T-057", domain: "infra", phase: "외부 키 발급", title: "Vercel 등록", role: "사람", status: "진행 중" },
+  // QA (자동)
+  { id: "T-062", domain: "admin", phase: "QA", title: "플랫폼 관리 E2E", role: "자동", status: "대기" },
+  { id: "T-063", domain: "auth", phase: "QA", title: "인증 플로우 E2E", role: "자동", status: "대기" },
+  // 릴리즈 (사람 승인)
+  { id: "T-065", domain: "release", phase: "릴리즈", title: "production 배포", role: "사람", status: "대기" },
 ]

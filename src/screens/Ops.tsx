@@ -1,6 +1,8 @@
 import { useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, Drawer, Row, Modal, Toggle, RoleChip } from "../components/ui"
-import { MANUAL_TASKS, SECRETS, RELEASES, AGENTS, AUTOMATION } from "../data"
+import { HUMAN_TASKS, RELEASES, AGENTS, AUTOMATION, type HumanTask, type ExternalKey } from "../data"
+
+const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
 
 function GitHubConnect() {
@@ -90,72 +92,156 @@ function Field({ title, children }: { title: string; children: React.ReactNode }
   )
 }
 
-// ============ MANUAL TASKS ============
-export function ManualTasks() {
-  const [sel, setSel] = useState(MANUAL_TASKS[4])
+// ============ HUMAN TASKS (사람 전용 작업) ============
+export function HumanTasks() {
+  const [tasks, setTasks] = useState<HumanTask[]>(HUMAN_TASKS)
+  const [selId, setSelId] = useState(HUMAN_TASKS[0].id)
+  const sel = tasks.find((t) => t.id === selId) ?? tasks[0]
+
+  const waiting = tasks.filter((t) => t.status === "대기").length
+  const inprog = tasks.filter((t) => t.status === "진행 중").length
+  const done = tasks.filter((t) => t.status === "완료").length
+  const blocked = tasks.filter((t) => t.status !== "완료").length
+
+  const patchSel = (patch: Partial<HumanTask>) => setTasks((ts) => ts.map((t) => (t.id === selId ? { ...t, ...patch } : t)))
+  const saveKey = (name: string) => patchSel({ keys: sel.keys.map((k) => (k.name === name ? { ...k, state: "등록됨" } : k)) })
+  const toggleCheck = (i: number) => patchSel({ checklist: sel.checklist.map((c, j) => (j === i ? { ...c, done: !c.done } : c)) })
+  const markDone = () => patchSel({ status: "완료" })
+
+  const statusTone = (s: string) => (s === "완료" ? "success" : s === "진행 중" ? "blue" : "warning")
+
   return (
     <div className="space-y-6">
-      <SectionTitle title="수동 작업" desc="AI가 수행할 수 없는 외부 설정 작업만 표시됩니다."
-        action={<span className="flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 text-[12px] font-bold text-[#b47908]"><Icon name="user" className="h-3.5 w-3.5" />사람 전용 작업</span>} />
-      <div className="flex flex-wrap gap-3">
-        <Metric label="전체 수동 작업" value="7" />
-        <Metric label="완료" value="3" tone="success" />
-        <Metric label="미완료" value="4" tone="warning" />
-        <Metric label="차단 중인 자동 작업" value="2" tone="error" />
+      <SectionTitle title="휴먼태스크" desc="AI가 대신할 수 없는 외부 계정·키 발급, 서비스 등록, 배포 승인만 모았어요."
+        action={<span className="flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 text-[12px] font-bold text-[#b47908]"><Icon name="hand" className="h-3.5 w-3.5" />사람 전용 작업</span>} />
+
+      {/* 분리 안내: 사람은 이것만, 나머지는 AI가 */}
+      <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-3">
+        <RoleChip owner="human" /><span className="text-[13px] font-semibold text-text-primary">이 목록만 처리하면 돼요.</span>
+        <span className="mx-1 text-line-strong">·</span>
+        <span className="text-[12px] text-text-secondary">스키마·프론트·백엔드·QA 등 나머지는</span>
+        <RoleChip owner="ai" /><RoleChip owner="auto" /><span className="text-[12px] text-text-secondary">가 알아서 진행하니 신경 쓰지 않아도 돼요.</span>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[380px_1fr]">
-        <Card className="overflow-hidden p-2">
-          {MANUAL_TASKS.map((m) => (
-            <button key={m.id} onClick={() => setSel(m)} className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-3 text-left ${sel.id === m.id ? "bg-selected" : "hover:bg-hover"}`}>
-              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${m.done ? "bg-success text-white" : "border-2 border-line-strong"}`}>{m.done && <Icon name="check" className="h-3.5 w-3.5" />}</span>
+      <div className="flex flex-wrap gap-3">
+        <Metric label="휴먼태스크" value={String(tasks.length)} />
+        <Metric label="대기" value={String(waiting)} tone="warning" />
+        <Metric label="진행 중" value={String(inprog)} tone="blue" />
+        <Metric label="완료" value={String(done)} tone="success" />
+        <Metric label="차단 중인 자동 작업" value={String(blocked)} tone="error" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-[360px_1fr]">
+        {/* 왼쪽: 휴먼태스크 목록 */}
+        <Card className="h-fit overflow-hidden p-2">
+          {tasks.map((m) => (
+            <button key={m.id} onClick={() => setSelId(m.id)} className={`flex w-full items-center gap-3 rounded-[12px] px-3 py-3 text-left ${sel.id === m.id ? "bg-selected" : "hover:bg-hover"}`}>
+              <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${m.status === "완료" ? "bg-success text-white" : m.status === "진행 중" ? "border-2 border-blue" : "border-2 border-line-strong"}`}>
+                {m.status === "완료" ? <Icon name="check" className="h-3.5 w-3.5" /> : m.status === "진행 중" ? <span className="h-1.5 w-1.5 rounded-full bg-blue" /> : null}
+              </span>
               <div className="min-w-0 flex-1">
-                <div className="font-mono text-[11px] font-bold text-text-tertiary">{m.id}</div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-mono text-[11px] font-bold text-text-tertiary">{m.id}</span>
+                  <Badge tone={HT_DOMAIN_TONE[m.domain]}>{m.domain}</Badge>
+                </div>
                 <div className={`truncate text-[14px] font-semibold ${sel.id === m.id ? "text-blue" : "text-text-primary"}`}>{m.title}</div>
               </div>
-              {!m.done && <Badge tone="warning">미완료</Badge>}
+              <Badge tone={statusTone(m.status) as any}>{m.status}</Badge>
             </button>
           ))}
         </Card>
 
+        {/* 오른쪽: 태스크 상세 */}
         <Card className="h-fit p-6">
           <div className="flex items-center justify-between">
-            <div><span className="font-mono text-[12px] font-bold text-text-tertiary">{sel.id}</span><h2 className="text-[18px] font-bold">{sel.title}</h2></div>
-            <Badge tone={sel.done ? "success" : "warning"}>{sel.done ? "완료" : "미완료"}</Badge>
-          </div>
-          <div className="mt-5 space-y-5">
-            <Field title="작업 목적">Production 데이터베이스 연결을 위한 Secret을 GitHub 저장소에 등록합니다.</Field>
-            <div className="divide-y divide-line">
-              <Row label="외부 서비스" value={sel.service} />
-              <Row label="필요한 Secret" value={<span className="font-mono text-[12px]">{sel.secret}</span>} />
-              <Row label="차단 중인 작업" value={<span className="text-error">{sel.blocks}</span>} />
-              <Row label="확인 방법" value="배포 워크플로 재실행 후 연결 확인" />
-            </div>
-            <Field title="수행 단계">
-              <ol className="ml-4 list-decimal space-y-1">
-                <li>Supabase에서 Production 연결 문자열 발급</li>
-                <li>저장소 Settings → Secrets에 등록</li>
-                <li>Agent Flow에서 상태 확인</li>
-              </ol>
-            </Field>
-
             <div>
-              <div className="mb-2 text-[13px] font-bold">Secret 상태</div>
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono text-[12px] font-bold text-text-tertiary">{sel.id}</span>
+                <Badge tone={HT_DOMAIN_TONE[sel.domain]}>{sel.domain}</Badge>
+                <span className="text-[11px] text-text-tertiary">{sel.phase}</span>
+              </div>
+              <h2 className="mt-0.5 text-[18px] font-bold">{sel.title}</h2>
+            </div>
+            <Badge tone={statusTone(sel.status) as any}>{sel.status}</Badge>
+          </div>
+
+          <div className="mt-5 space-y-6">
+            <Field title="작업 목적">{sel.purpose}</Field>
+
+            {/* 외부 키 등록 */}
+            {sel.keys.length > 0 && (
+              <div>
+                <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="key" className="h-4 w-4 text-text-tertiary" />외부 키 등록</div>
+                <div className="space-y-3">
+                  {sel.keys.map((k) => <ExternalKeyRow key={k.name} k={k} onSave={() => saveKey(k.name)} />)}
+                </div>
+              </div>
+            )}
+
+            {/* 수동 처리 */}
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="hand" className="h-4 w-4 text-text-tertiary" />수동 처리</div>
+              <p className="rounded-[12px] bg-surface-2 px-4 py-3 text-[13px] leading-relaxed text-text-secondary">{sel.manual}</p>
+            </div>
+
+            {/* 체크리스트 */}
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="critic" className="h-4 w-4 text-text-tertiary" />체크리스트</div>
               <div className="rounded-[12px] border border-line">
-                {SECRETS.map((s, i) => (
-                  <div key={s.name} className={`flex items-center justify-between px-4 py-3 ${i < SECRETS.length - 1 ? "border-b border-line" : ""}`}>
-                    <span className="flex items-center gap-2 font-mono text-[13px] text-text-secondary"><Icon name="lock" className="h-4 w-4 text-text-tertiary" />{s.name}</span>
-                    <Badge>{s.state}</Badge>
-                  </div>
+                {sel.checklist.map((c, i) => (
+                  <button key={c.text} onClick={() => toggleCheck(i)} className={`flex w-full items-center gap-2.5 px-4 py-2.5 text-left ${i < sel.checklist.length - 1 ? "border-b border-line" : ""} hover:bg-hover`}>
+                    <span className={`flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-[6px] ${c.done ? "bg-success text-white" : "border-2 border-line-strong"}`}>{c.done && <Icon name="check" className="h-3 w-3" />}</span>
+                    <span className={`text-[13px] ${c.done ? "text-text-tertiary line-through" : "text-text-secondary"}`}>{c.text}</span>
+                  </button>
                 ))}
               </div>
-              <p className="mt-2 text-[12px] text-text-tertiary">Secret 값 자체는 화면에 표시되지 않습니다.</p>
             </div>
 
-            <div className="flex gap-2"><Button icon={<Icon name="external" className="h-4 w-4" />}>GitHub에서 열기</Button><Button variant="primary">완료로 표시</Button></div>
+            <div className="divide-y divide-line">
+              <Row label="차단 중인 자동 작업" value={<span className="text-error">{sel.blocks}</span>} />
+              <Row label="확인 방법" value="키 등록 후 관련 워크플로 재실행" />
+            </div>
+
+            {/* 진행 노트 */}
+            <div>
+              <div className="mb-2 flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><Icon name="doc" className="h-4 w-4 text-text-tertiary" />진행 노트</div>
+              <textarea rows={2} placeholder="진행 상황이나 메모를 남겨보세요." className="w-full rounded-[12px] border border-line bg-surface p-3 text-[13px] outline-none focus:border-blue" />
+            </div>
+
+            <div className="flex gap-2">
+              <Button icon={<Icon name="external" className="h-4 w-4" />}>GitHub에서 열기</Button>
+              <Button variant="primary" onClick={markDone} disabled={sel.status === "완료"}>완료로 표시</Button>
+            </div>
           </div>
         </Card>
       </div>
+    </div>
+  )
+}
+
+// 외부 API 키 입력 행 — 값은 저장 즉시 마스킹돼요.
+function ExternalKeyRow({ k, onSave }: { k: ExternalKey; onSave: () => void }) {
+  const [val, setVal] = useState("")
+  const registered = k.state === "등록됨"
+  return (
+    <div className="rounded-[12px] border border-line p-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[13px] font-bold text-text-primary">{k.name}</span>
+        <Badge tone={registered ? "success" : "warning"}>{k.state}</Badge>
+      </div>
+      <div className="mt-1.5 text-[12px] text-text-secondary">{k.desc}</div>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <a href={k.site} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-[12px] font-semibold text-blue hover:underline"><Icon name="external" className="h-3.5 w-3.5" />발급 사이트</a>
+        {k.docs && <a href={k.docs} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-[12px] font-semibold text-text-secondary hover:underline"><Icon name="doc" className="h-3.5 w-3.5" />Docs</a>}
+      </div>
+      {registered ? (
+        <div className="mt-2.5 flex items-center gap-2 rounded-[10px] bg-success-light px-3 py-2 text-[12px] font-semibold text-success"><Icon name="lock" className="h-4 w-4" />등록 완료 · 값은 마스킹되어 표시되지 않아요</div>
+      ) : (
+        <div className="mt-2.5 flex gap-2">
+          <input type="password" value={val} onChange={(e) => setVal(e.target.value)} placeholder="값 입력 (저장 즉시 마스킹)" autoComplete="off" className="h-10 flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
+          <Button variant="primary" onClick={onSave} disabled={!val.trim()}>저장</Button>
+        </div>
+      )}
     </div>
   )
 }

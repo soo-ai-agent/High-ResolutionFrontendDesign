@@ -6,7 +6,7 @@ import Overview from "./screens/Overview"
 import Interview from "./screens/Interview"
 import { Sources, PRD, Critic, IA, ScreenList, ScreenDetail, Flow, DesignSystem } from "./screens/Design"
 import { Tasks, PullRequests, Runs, Tests } from "./screens/Dev"
-import { ManualTasks, Releases, Settings } from "./screens/Ops"
+import { HumanTasks, Releases, Settings } from "./screens/Ops"
 
 const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   overview: (nav) => <Overview navigate={nav} />,
@@ -23,7 +23,7 @@ const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
   "pull-requests": (nav) => <PullRequests navigate={nav} />,
   runs: () => <Runs />,
   tests: () => <Tests />,
-  "manual-tasks": () => <ManualTasks />,
+  "human-tasks": () => <HumanTasks />,
   releases: () => <Releases />,
   settings: () => <Settings />,
 }

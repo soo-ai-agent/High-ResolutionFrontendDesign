@@ -1,6 +1,13 @@
 import { useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, SearchField, Drawer, Row, Tabs, toneFor } from "../components/ui"
-import { TASK_COLUMNS, TASKS, PRS, PR_CHECKS, RUNS, RUN_STEPS, TESTS_SUMMARY, TEST_CASES, BUILD_PLUGINS, type Task } from "../data"
+import { TASK_COLUMNS, TASKS, PRS, PR_CHECKS, RUNS, RUN_STEPS, TESTS_SUMMARY, TEST_CASES, BUILD_PLUGINS, BUILD_PHASES, BUILD_DOMAINS, BUILD_TASKS, type Task, type BuildRole } from "../data"
+
+// 빌드 보드 역할 표기 — 자동/AI/사람을 색으로 구분해요.
+const BUILD_ROLE_META: Record<BuildRole, { t: string; dot: string }> = {
+  "자동": { t: "자동", dot: "bg-success" },
+  "ai": { t: "AI", dot: "bg-purple" },
+  "사람": { t: "사람", dot: "bg-warning" },
+}
 
 const DOMAIN_TONE: Record<string, any> = { backend: "blue", frontend: "purple", test: "success", infra: "warning" }
 
@@ -69,7 +76,7 @@ export function Tasks({ navigate }: { navigate: (r: string) => void }) {
       )}
 
       {view === "테이블" && <TaskTable onSelect={setSel} />}
-      {view === "단계 × 도메인" && <TaskTable onSelect={setSel} />}
+      {view === "단계 × 도메인" && <BuildBoard />}
 
       <TaskDrawer task={sel} onClose={() => setSel(null)} navigate={navigate} />
     </div>
@@ -131,6 +138,72 @@ function TaskTable({ onSelect }: { onSelect: (t: Task) => void }) {
         </tbody>
       </table>
     </Card>
+  )
+}
+
+// 빌드 보드 — 도메인(행) × 단계(열)로 작업을 배치하고, 각 작업이 자동/AI/사람 중
+// 누구의 몫인지 표시해요. 사람 몫(외부 키 발급·릴리즈)은 강조되어 한눈에 보여요.
+function BuildBoard() {
+  const domains = BUILD_DOMAINS.filter((d) => BUILD_TASKS.some((t) => t.domain === d))
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-2.5 text-[12px]">
+        <span className="font-semibold text-text-secondary">단계별 담당:</span>
+        {(["자동", "ai", "사람"] as BuildRole[]).map((r) => (
+          <span key={r} className="inline-flex items-center gap-1.5 font-semibold text-text-secondary"><span className={`h-2 w-2 rounded-full ${BUILD_ROLE_META[r].dot}`} />{BUILD_ROLE_META[r].t}</span>
+        ))}
+        <span className="ml-auto text-text-tertiary">사람 몫은 <b className="text-[#b47908]">휴먼태스크</b>로 강조돼요</span>
+      </div>
+      <Card className="overflow-x-auto p-3">
+        <div className="min-w-[1080px]">
+          {/* 헤더: 단계 */}
+          <div className="flex border-b border-line">
+            <div className="w-[104px] shrink-0 px-2 py-2 text-[12px] font-bold text-text-tertiary">도메인</div>
+            {BUILD_PHASES.map((ph, i) => {
+              const items = BUILD_TASKS.filter((t) => t.phase === ph)
+              const done = items.filter((t) => t.status === "완료").length
+              return (
+                <div key={ph} className="min-w-[168px] flex-1 px-2 py-2">
+                  <div className="flex items-center gap-1.5 text-[13px] font-bold text-text-primary"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-surface-2 text-[11px] text-text-tertiary">{i + 1}</span>{ph}</div>
+                  <div className="mt-0.5 pl-6 text-[11px] text-text-tertiary">{done}/{items.length}</div>
+                </div>
+              )
+            })}
+          </div>
+          {/* 행: 도메인 */}
+          {domains.map((dm) => {
+            const rowItems = BUILD_TASKS.filter((t) => t.domain === dm)
+            return (
+              <div key={dm} className="flex border-b border-line last:border-0">
+                <div className="w-[104px] shrink-0 px-2 py-3 text-[13px] font-semibold text-text-secondary">{dm}</div>
+                {BUILD_PHASES.map((ph) => {
+                  const cell = rowItems.filter((t) => t.phase === ph)
+                  return (
+                    <div key={ph} className="min-w-[168px] flex-1 space-y-2 px-2 py-3">
+                      {cell.map((t) => {
+                        const human = t.role === "사람"
+                        const meta = BUILD_ROLE_META[t.role]
+                        return (
+                          <div key={t.id} className={`rounded-[10px] border p-2.5 transition-colors ${human ? "border-warning/50 bg-warning-light" : "border-line bg-surface hover:bg-hover"}`}>
+                            <div className="flex items-center justify-between gap-1">
+                              <span className="font-mono text-[11px] font-bold text-text-tertiary">{t.id}</span>
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-text-tertiary"><span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.t}</span>
+                            </div>
+                            <div className="mt-1 text-[12px] font-semibold leading-snug text-text-primary">{t.title}</div>
+                            <div className="mt-1.5"><Badge tone={t.status === "완료" ? "success" : t.status === "진행 중" ? "blue" : "neutral"}>{t.status}</Badge></div>
+                          </div>
+                        )
+                      })}
+                      {cell.length === 0 && <div className="rounded-[10px] border border-dashed border-line py-4 text-center text-[11px] text-text-disabled">—</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
+      </Card>
+    </div>
   )
 }
 
