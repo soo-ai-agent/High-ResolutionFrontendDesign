@@ -53,19 +53,38 @@ docker run -p 8443:8443 -e GITHUB_WEBHOOK_SECRET=<secret> -v agent-flow-data:/da
 3. 조직 레벨 `projects_v2_item`(실 보드 이동)은 조직 웹훅에서 따로 켜세요.
 
 ## Fly.io (`fly.toml` 준비됨 · `backend/Dockerfile` 사용)
+
+아래 `<app>` 을 **전역 고유한** 원하는 앱 이름으로 바꿔 넣으세요(모든 명령 + `fly.toml` 3번째 줄까지 동일하게).
+
 ```bash
-curl -L https://fly.io/install.sh | sh && fly auth login
-fly apps create <내-앱이름>                 # fly.toml 의 app 값도 동일하게
-fly volumes create data --region nrt --size 1
+# 1) flyctl 설치 — 설치기는 ~/.fly/bin 에 넣지만 현재 셸 PATH 엔 추가하지 않아요.
+#    그래서 install 과 login 을 && 로 잇지 말고, PATH 를 명시적으로 넣은 뒤 로그인.
+curl -L https://fly.io/install.sh | sh
+export FLYCTL_INSTALL="$HOME/.fly"; export PATH="$FLYCTL_INSTALL/bin:$PATH"
+fly auth login
+# (또는 패키지 매니저로 설치하면 PATH 에 바로 잡혀요: brew install flyctl 등)
+
+# 2) 앱 생성 + fly.toml 동기화 — 이름이 어긋나면 이후 명령이 'Could not find App' 로 실패해요.
+fly apps create <app>
+#   ↑ 그런 다음 fly.toml 3번째 줄을 만든 이름과 똑같이 편집: app = "<app>"
+
+# 3) 영속 볼륨(H2용) + 웹훅 시크릿 — deploy 전에 먼저.
+fly volumes create data --region nrt --size 1     # 리전은 fly.toml primary_region 과 동일
 fly secrets set GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
-# 운영 Postgres(권장) — attach 가 DATABASE_URL(postgres:// DSN)을 자동 주입하고, 백엔드가 그 형식을 지원해요:
-fly postgres create --name <앱>-db --region nrt
-fly postgres attach <앱>-db            # → DATABASE_URL 시크릿 설정됨
-fly secrets set SPRING_PROFILES_ACTIVE=prod
+
+# 4) (권장) 운영 Postgres — attach 가 DATABASE_URL(postgres:// DSN)을 자동 주입, 백엔드가 그 형식 지원.
+fly postgres create --name <app>-db --region nrt  # 설정 프리셋을 물어보면 'Development' 선택(대화형)
+fly postgres attach <app>-db                       # → DATABASE_URL 시크릿 설정됨
+fly secrets set SPRING_PROFILES_ACTIVE=prod        # attach '다음'에! (prod 인데 DATABASE_URL 없으면 부팅 실패)
+#   ↑ 최신 flyctl 은 관리형 Postgres 를 권장: `fly mpg create` / `fly mpg attach <cluster>` (동일하게 DATABASE_URL 주입)
+
+# 5) 배포 + 확인
 fly deploy
-curl https://<앱>.fly.dev/api/health        # → {"ok":true}
+curl https://<app>.fly.dev/api/health              # → {"ok":true}
 ```
-- `min_machines_running=1`(상시가동)로 웹훅 콜드스타트 누락 방지. VM 512MB(JVM).
+- **리전 일치**: 볼륨·Postgres·앱을 같은 리전(`nrt`)으로. `fly.toml` 의 `primary_region` 과도 맞추세요.
+- **메모리**: 첫 배포는 `[[vm]] memory = "1024mb"`(Spring Boot 여유). 안정화 후 `fly logs` 로 RSS 확인해 512mb 로 낮춰도 돼요.
+- **상시가동**: `auto_stop_machines="off"` 로 머신을 끄지 않아 웹훅 콜드스타트 누락을 막아요.
 - **Postgres(`prod`)** 를 붙이면 JPA가 테이블을 자동 생성(ddl-auto=update)하고 재시작·다중 머신에도 데이터가 유지돼요.
   Postgres 미사용 시 기본 H2 파일이 `/data` 볼륨에 영속(단일 머신).
 

@@ -11,6 +11,7 @@ logs
 backend/.gradle
 backend/.data
 backend/bin
+backend/build
 *.tsbuildinfo
 .DS_Store
 .claude*

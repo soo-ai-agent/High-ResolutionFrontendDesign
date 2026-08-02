@@ -28,8 +28,8 @@ FROM eclipse-temurin:21-jre
 WORKDIR /app
 ENV PORT=8443
 ENV MIRROR_DATA_DIR=/data
-# 컨테이너 메모리에 맞춰 힙을 잡아요(JDK 21 은 cgroup 인식). 512MB VM 에서도 안전한 비율.
-ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70.0 -XX:+UseContainerSupport"
+# 컨테이너 메모리에 맞춰 힙을 잡아요(JDK 21 은 cgroup 인식이 기본 on). VM 메모리의 70%를 힙 상한으로.
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=70.0"
 # GITHUB_WEBHOOK_SECRET, (운영) SPRING_PROFILES_ACTIVE=prod + DATABASE_URL 을 주입하세요.
 COPY --from=build /app/backend/build/libs/*.jar app.jar
 RUN mkdir -p /data

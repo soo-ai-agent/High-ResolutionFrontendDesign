@@ -27,7 +27,14 @@ class DataSourceConfig {
       cfg.username = env.getProperty("DATABASE_USER").orEmpty()
       cfg.password = env.getProperty("DATABASE_PASSWORD").orEmpty()
     } else {
-      val uri = URI(raw) // postgres://user:pass@host:port/db?sslmode=require
+      // postgres://user:pass@host:port/db?sslmode=require
+      // URI() 는 인코딩 안 된 특수문자에서 URISyntaxException → 알아보기 쉬운 메시지로 변환.
+      val uri = try {
+        URI(raw)
+      } catch (e: java.net.URISyntaxException) {
+        error("DATABASE_URL 파싱 실패 — 비밀번호에 특수문자가 있으면 percent-encode 하세요(예: @ → %40). 원인: ${e.message}")
+      }
+      // getUserInfo() 는 percent-decoding 을 이미 처리해요 → 여기서 추가 디코딩하면 이중 디코딩. 금지.
       val userInfo = uri.userInfo?.split(":", limit = 2) ?: emptyList()
       val port = if (uri.port > 0) uri.port else 5432
       val db = uri.path.trimStart('/')

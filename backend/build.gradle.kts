@@ -44,7 +44,11 @@ tasks.withType<Test> {
   useJUnitPlatform()
 }
 
-// 프론트엔드 빌드(../dist)를 정적 리소스(static/)로 포함 — 단일 오리진 SPA + API(Node index.mjs 와 동일).
+// bootJar(실행 가능한 fat jar)만 산출물로 남겨요. Spring Boot 가 기본으로 만드는
+// `-plain.jar` 를 끄면 build/libs 에 jar 가 항상 하나뿐 → Dockerfile 의 `*.jar` COPY 가 결정적.
+tasks.named("jar") { enabled = false }
+
+// 프론트엔드 빌드(../dist)를 정적 리소스(static/)로 포함 — 단일 오리진으로 SPA + API 서빙.
 // 먼저 `pnpm build` 로 dist 를 만들어 두세요. dist 가 없으면 조용히 건너뛰어요.
 tasks.processResources {
   from(rootProject.projectDir.parentFile.resolve("dist")) { into("static") }

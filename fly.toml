@@ -9,23 +9,27 @@ primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 
 [env]
   PORT = "8443"
   MIRROR_DATA_DIR = "/data" # H2 파일 DB 위치 — 아래 마운트에 영속돼요.
-  # 운영 Postgres 로 전환: fly secrets set SPRING_PROFILES_ACTIVE=prod DATABASE_URL=...
+  # 운영 Postgres 전환: `fly postgres attach` 가 DATABASE_URL 을 자동 주입하니,
+  # attach 뒤에 `fly secrets set SPRING_PROFILES_ACTIVE=prod` 만 추가로 실행하세요.
   # GITHUB_WEBHOOK_SECRET 은 여기 두지 마세요 — `fly secrets set` 으로 주입.
 
 [http_service]
   internal_port = 8443
   force_https = true
-  # 웹훅 수신을 안정적으로 받으려면 최소 1대 상시가동 (콜드스타트 누락 방지).
+  # 웹훅 콜드스타트 누락 방지: auto_stop=off 로 머신을 끄지 않아 항상 켜져 있어요.
+  # (min_machines_running 은 autostop 이 켜졌을 때만 의미가 있어요.)
   auto_start_machines = true
   auto_stop_machines = "off"
   min_machines_running = 1
 
+  # grace_period 는 JVM 콜드부팅(대략 15~40s) 동안 실패 체크를 세지 않게 넉넉히.
+  # (deploy 는 grace 가 아니라 wait-timeout 까지 healthy 를 기다려요 — 배포 자체를 막진 않음.)
   [[http_service.checks]]
     method = "GET"
     path = "/api/health"
-    interval = "30s"
+    interval = "15s"
     timeout = "5s"
-    grace_period = "10s"
+    grace_period = "30s"
 
 # 미러 저장소(JSON) 영속 볼륨. 배포 전 생성:
 #   fly volumes create data --region nrt --size 1
@@ -35,4 +39,5 @@ primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "512mb" # JVM(Spring Boot) 이라 여유 있게.
+  # Spring Boot(web+JPA)+Kotlin 이라 1GB 로 시작(첫 배포 안정성). 부하 낮으면 512mb 로 낮춰도 돼요.
+  memory = "1024mb"
