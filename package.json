@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "serve": "node server/index.mjs",
+    "backend": "cd backend && ./gradlew bootRun",
     "format": "oxfmt"
   },
   "dependencies": {

@@ -4,11 +4,12 @@ app = "agent-flow"
 primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 변경.
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = "backend/Dockerfile" # Kotlin/Spring 백엔드(프론트 dist 포함) · 컨텍스트=저장소 루트
 
 [env]
   PORT = "8443"
-  MIRROR_DATA_DIR = "/data" # 아래 마운트에 영속돼요.
+  MIRROR_DATA_DIR = "/data" # H2 파일 DB 위치 — 아래 마운트에 영속돼요.
+  # 운영 Postgres 로 전환: fly secrets set SPRING_PROFILES_ACTIVE=prod DATABASE_URL=...
   # GITHUB_WEBHOOK_SECRET 은 여기 두지 마세요 — `fly secrets set` 으로 주입.
 
 [http_service]
@@ -34,4 +35,4 @@ primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 
 
 [[vm]]
   size = "shared-cpu-1x"
-  memory = "256mb" # 무의존성 node 서버라 충분해요.
+  memory = "512mb" # JVM(Spring Boot) 이라 여유 있게.

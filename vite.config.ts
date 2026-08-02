@@ -7,10 +7,10 @@ import siteConfiguration from './.figma/make/site.json'
 // 앱 데이터 값의 단일 소스. 서버(개발/프리뷰/프로덕션)가 이 값을 /api/bootstrap 으로 제공해요.
 // 프론트엔드 번들에는 포함되지 않아요 (src/data.ts 는 타입만 참조).
 import * as APP_DATA from './src/data.source'
-// 서버 측 GitHub 프록시 (/api/github/*). 프론트는 GitHub를 직접 호출하지 않아요.
-import { handleGithub } from './server/github-proxy.mjs'
-// GitHub → DB 미러 웹훅 (/api/webhook/*) + 미러 읽기 (/api/mirror/*).
-import { handleMirror } from './server/mirror.mjs'
+
+// 백엔드는 Kotlin/Spring(backend/). 개발/프리뷰에서 /api 요청을 그 서버로 프록시해요.
+// 기본 http://127.0.0.1:8080 — 다른 포트면 BACKEND_URL 로 지정하세요.
+const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:8080'
 
 // Vite config — https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
@@ -42,10 +42,12 @@ export default defineConfig(({ mode }) => {
       port: parseInt(process.env.PORT || '8443'),
       strictPort: true,
       watch: { ignored: ['**/.figma/**'] },
+      proxy: { '/api': { target: BACKEND_URL, changeOrigin: true } },
     },
     preview: {
       host: '0.0.0.0',
       port: parseInt(process.env.PORT || '8443'),
+      proxy: { '/api': { target: BACKEND_URL, changeOrigin: true } },
     },
   }
 })
@@ -78,39 +80,14 @@ type FigmaSiteConfiguration = {
 }
 
 /**
- * 앱 데이터 API. 개발/프리뷰 서버에 /api/bootstrap 미들웨어를 붙여 데이터를
- * JSON 으로 제공하고, 프로덕션 빌드에는 bootstrap.json 을 함께 emit 해요.
- * 별도 프로세스나 추가 의존성 없이 같은 오리진에서 동작해요.
+ * 시드 데이터를 dist/bootstrap.json 으로 emit 해요. (단일 소스 = src/data.source.ts)
+ * Kotlin 백엔드가 이 파일을 정적 리소스로 포함해 /api/bootstrap 으로 제공해요.
+ * 런타임 /api 요청은 위 server/preview 프록시가 백엔드로 넘겨요.
  */
 function appApiPlugin(data: Record<string, unknown>): Plugin {
   const payload = JSON.stringify({ ...data })
-  const handler = async (req: any, res: any, next: any) => {
-    const url = String(req.url || '').split('?')[0]
-    if (url === '/api/health') {
-      res.setHeader('Content-Type', 'application/json')
-      return res.end('{"ok":true}')
-    }
-    if (url === '/api/bootstrap') {
-      res.setHeader('Content-Type', 'application/json; charset=utf-8')
-      res.setHeader('Cache-Control', 'no-store')
-      return res.end(payload)
-    }
-    if (url.startsWith('/api/github')) {
-      if (await handleGithub(req, res)) return
-    }
-    if (url.startsWith('/api/webhook') || url.startsWith('/api/mirror')) {
-      if (await handleMirror(req, res)) return
-    }
-    next()
-  }
   return {
-    name: 'app-api',
-    configureServer(server) {
-      server.middlewares.use(handler)
-    },
-    configurePreviewServer(server) {
-      server.middlewares.use(handler)
-    },
+    name: 'app-bootstrap-emit',
     generateBundle() {
       this.emitFile({ type: 'asset', fileName: 'bootstrap.json', source: payload })
     },

@@ -18,8 +18,13 @@ This is the canonical project structure. Start with task-relevant files below. O
 - `src/index.css` - Global CSS entrypoint and Tailwind CSS v4 import
 - `index.html` - Vite HTML shell containing the `#root` element and loading `src/main.tsx`
 - `package.json` - Project dependencies and the Vite build, development, preview, and formatting scripts
-- `vite.config.ts` - Vite configuration with React, Tailwind CSS v4, and Figma Make plugins plus the `@` alias for `src`
+- `vite.config.ts` - Vite configuration with React, Tailwind CSS v4, and Figma Make plugins plus the `@` alias for `src`; in dev/preview it proxies `/api` to the backend
 - `.mise.toml` - Toolchain versions for Node.js and pnpm
+- `backend/` - Kotlin/Spring Boot backend serving `/api/*` (GitHub proxy, webhook mirror, projects). See `backend/README.md`.
+
+## Backend (`/api/*`)
+
+The API is a Kotlin/Spring Boot app in `backend/` (Java 21, Gradle). It serves the GitHub proxy, the webhook mirror DB (H2 locally, Postgres in prod), and project persistence. The frontend only calls `/api/*` over HTTP — Vite proxies those to the backend in dev (`BACKEND_URL`, default `http://127.0.0.1:8080`), and the built jar serves the SPA + API single-origin. Data seed lives in `src/data.source.ts` and is served at `/api/bootstrap`. See `backend/README.md` and `DEPLOY.md`.
 
 ## Dependencies
 

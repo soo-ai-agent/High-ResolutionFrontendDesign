@@ -15,8 +15,10 @@ class HealthController {
 @RestController
 class BootstrapController {
   // 시드 데이터(프로젝트 목록 등 데모) — 프론트가 부팅 시 하이드레이션에 사용.
+  // 프론트 빌드(dist/bootstrap.json)가 static/ 으로 번들돼요. 단일 소스 = src/data.source.ts.
+  // (`pnpm build` 전이면 없을 수 있고, 그 경우 빈 시드로 동작해요.)
   private val body: String by lazy {
-    val res = ClassPathResource("bootstrap.json")
+    val res = ClassPathResource("static/bootstrap.json")
     if (res.exists()) res.inputStream.readBytes().toString(Charsets.UTF_8) else "{}"
   }
 

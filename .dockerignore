@@ -8,7 +8,9 @@ build
 .env*
 *.log
 logs
-server/.data
+backend/.gradle
+backend/.data
+backend/bin
 *.tsbuildinfo
 .DS_Store
 .claude*
