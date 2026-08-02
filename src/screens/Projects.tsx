@@ -1,12 +1,32 @@
-import { useState } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Icon, IconButton, Button, Badge, Card, SummaryCard, SectionTitle, SearchField, Progress, Toggle, RoleChip } from "../components/ui"
-import { PROJECTS, BUILD_PHASES, BUILD_DOMAINS } from "../data"
+import { PROJECTS, BUILD_PHASES, BUILD_DOMAINS, type ProjectItem } from "../data"
+import { listProjects, createProject } from "../lib/projects"
 
 export default function Projects({ navigate }: { navigate: (r: string) => void }) {
   const [adding, setAdding] = useState(false)
-  const repoTotal = PROJECTS.reduce((n, p) => n + p.repos.length, 0)
-  const active = PROJECTS.filter((p) => p.progress < 100).length
-  const failing = PROJECTS.reduce((n, p) => n + p.fails, 0)
+  const [serverProjects, setServerProjects] = useState<ProjectItem[]>([])
+
+  const load = async () => {
+    try {
+      setServerProjects(await listProjects())
+    } catch {
+      // 서버 미가동/오류 시 번들 시드(데모)만 보여줘요.
+    }
+  }
+  useEffect(() => {
+    void load()
+  }, [])
+
+  // 서버(영속) + 번들 시드(데모) 합치기 — 같은 id는 서버 우선, 새로 만든 게 위로.
+  const all = useMemo(() => {
+    const ids = new Set(serverProjects.map((p) => p.id))
+    return [...serverProjects, ...PROJECTS.filter((s) => !ids.has(s.id))]
+  }, [serverProjects])
+
+  const repoTotal = all.reduce((n, p) => n + p.repos.length, 0)
+  const active = all.filter((p) => p.progress < 100).length
+  const failing = all.reduce((n, p) => n + p.fails, 0)
 
   return (
     <div className="min-h-screen bg-app">
@@ -37,7 +57,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
         />
 
         <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
-          <SummaryCard label="전체 프로젝트" value={String(PROJECTS.length)} sub={`진행 중 ${active}`} />
+          <SummaryCard label="전체 프로젝트" value={String(all.length)} sub={`진행 중 ${active}`} />
           <SummaryCard label="연결된 저장소" value={String(repoTotal)} sub="프로젝트 하위" tone="blue" />
           <SummaryCard label="실행 중인 Actions" value="2" sub="Backend · Repair" tone="purple" />
           <SummaryCard label="실패한 Workflow" value={String(failing)} sub="즉시 확인 필요" tone="error" />
@@ -50,7 +70,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
         </div>
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {PROJECTS.map((p) => (
+          {all.map((p) => (
             <Card key={p.id} hover onClick={() => navigate("pipeline")} className="flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
@@ -99,7 +119,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
           ))}
         </div>
       </div>
-      {adding && <AddProjectModal onClose={() => setAdding(false)} />}
+      {adding && <AddProjectModal onClose={() => setAdding(false)} onCreate={async (p) => { await createProject(p); await load() }} />}
     </div>
   )
 }
@@ -130,8 +150,10 @@ const REPO_PURPOSES = ["프론트엔드", "백엔드", "인프라", "공용 패�
 const WIZARD_STEPS = ["프로젝트 정보", "저장소 연결", "도메인·단계", "역할·연동", "확인"]
 
 // 프로젝트 추가 위저드 — 정보 → 저장소(여러 개) → 도메인·단계 → 역할·연동 → 확인.
-function AddProjectModal({ onClose }: { onClose: () => void }) {
+function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate: (p: ProjectItem) => Promise<void> }) {
   const [step, setStep] = useState(0)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
   const [org, setOrg] = useState("sample-org")
@@ -149,6 +171,33 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
   const toggleDomain = (d: string) => setDomains((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : [...ds, d]))
 
   const validRepos = repos.filter((r) => r.name.trim())
+
+  const submit = async () => {
+    setBusy(true)
+    setErr("")
+    try {
+      const project: ProjectItem = {
+        id: `p-${Date.now()}`,
+        name: name.trim(),
+        org: org.trim() || "sample-org",
+        desc: desc.trim(),
+        stage: "계획",
+        progress: 0,
+        repos: validRepos.map((r) => ({ name: r.name.trim(), purpose: r.purpose })),
+        tasks: 0,
+        prs: 0,
+        fails: 0,
+        updated: "방금",
+        synced: false,
+      }
+      await onCreate(project)
+      onClose()
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "생성에 실패했어요.")
+    } finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -269,11 +318,12 @@ function AddProjectModal({ onClose }: { onClose: () => void }) {
         </div>
 
         {/* 푸터 */}
+        {err && <div className="border-t border-line bg-error-light px-6 py-2 text-[12px] font-semibold text-error">{err}</div>}
         <div className="flex items-center justify-between border-t border-line px-6 py-4">
           <Button onClick={step === 0 ? onClose : prev}>{step === 0 ? "취소" : "이전"}</Button>
           {step < WIZARD_STEPS.length - 1
             ? <Button variant="primary" onClick={next} disabled={!canNext}>다음</Button>
-            : <Button variant="primary" onClick={onClose} icon={<Icon name="check" className="h-4 w-4" />}>프로젝트 생성</Button>}
+            : <Button variant="primary" onClick={submit} loading={busy} disabled={!name.trim()} icon={<Icon name="check" className="h-4 w-4" />}>프로젝트 생성</Button>}
         </div>
       </div>
     </div>

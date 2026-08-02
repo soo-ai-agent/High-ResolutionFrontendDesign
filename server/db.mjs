@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url"
 const DIR = process.env.MIRROR_DATA_DIR ? path.resolve(process.env.MIRROR_DATA_DIR) : path.join(path.dirname(fileURLToPath(import.meta.url)), ".data")
 const FILE = path.join(DIR, "mirror.json")
 
-const empty = () => ({ repos: {}, issues: {}, pulls: {}, runs: {}, board: {}, events: [], meta: { updatedAt: null } })
+const empty = () => ({ projects: {}, repos: {}, issues: {}, pulls: {}, runs: {}, board: {}, events: [], meta: { updatedAt: null } })
 
 let state = load()
 
@@ -55,6 +55,16 @@ export const db = {
   },
 
   events: (repo) => (repo ? state.events.filter((e) => e.repo === repo) : state.events),
+
+  // ---- 프로젝트 (어드민 소유, 쓰기 가능) ----
+  listProjects: () => Object.values(state.projects || {}),
+  upsertProject(p) {
+    if (!p?.id) return null
+    state.projects[p.id] = { ...(state.projects[p.id] || {}), ...p }
+    touch()
+    persist()
+    return state.projects[p.id]
+  },
 
   upsertRepo(r) {
     if (!r?.full_name) return

@@ -230,6 +230,27 @@ export async function handleMirror(req, res) {
     return true
   }
 
+  // ---- 프로젝트 (목록 읽기 / 생성) — 어드민 소유 데이터 ----
+  if (p === "/api/mirror/projects") {
+    if (req.method === "POST") {
+      let body
+      try {
+        body = JSON.parse((await readRaw(req)).toString("utf-8") || "{}")
+      } catch {
+        send(res, 400, { error: "invalid JSON" })
+        return true
+      }
+      if (!body.id || !body.name) {
+        send(res, 400, { error: "id·name 이 필요해요." })
+        return true
+      }
+      send(res, 201, db.upsertProject(body))
+      return true
+    }
+    send(res, 200, db.listProjects())
+    return true
+  }
+
   send(res, 404, { error: "not found" })
   return true
 }
