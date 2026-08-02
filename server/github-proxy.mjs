@@ -67,10 +67,7 @@ function send(res, code, obj) {
   res.end(JSON.stringify(obj))
 }
 
-// GitHub 응답을 UI가 쓰는 형태로 정규화 (원래 프론트에서 하던 매핑을 서버로 이동)
-const mapRepo = (r) => ({ id: r.id, full_name: r.full_name, name: r.name, owner: r.owner.login, default_branch: r.default_branch, private: r.private, updated_at: r.updated_at })
-const mapIssue = (i) => ({ number: i.number, title: i.title, body: i.body ?? null, state: i.state, html_url: i.html_url, user: i.user?.login ?? "", labels: (i.labels ?? []).map((l) => (typeof l === "string" ? l : l.name)) })
-const mapDoc = (d) => ({ name: d.name, path: d.path, type: d.type, size: d.size ?? 0 })
+// GitHub 훅 응답을 UI 형태로 정규화
 const mapHook = (h) => ({ id: h.id, active: h.active, events: h.events ?? [], url: h.config?.url ?? "", insecure_ssl: h.config?.insecure_ssl ?? "0", last_status: h.last_response?.status ?? null, last_code: h.last_response?.code ?? null, updated_at: h.updated_at })
 
 // 웹훅에 등록할 기본 이벤트 (이슈·PR·Actions·푸시). projects_v2_item 은 조직 레벨이라 여기서 못 걸어요.
@@ -150,56 +147,21 @@ export async function handleGithub(req, res) {
       return true
     }
 
-    if (p === "/api/github/repos") {
-      const r = await gh("/user/repos?per_page=100&sort=updated&affiliation=owner,collaborator,organization_member")
-      const data = await r.json()
-      send(res, 200, data.map(mapRepo))
-      return true
-    }
-
-    if (p === "/api/github/issues") {
-      // 쓰기: 이슈 생성 (어드민 → GitHub 프록시 쓰기)
-      if (req.method === "POST") {
-        const body = await readJson(req)
-        const owner = body.owner
-        const repo = body.repo
-        const title = String(body.title || "").trim()
-        if (!owner || !repo || !title) {
-          send(res, 400, { error: "owner·repo·title 이 필요해요." })
-          return true
-        }
-        const payload = { title, body: body.body ?? "" }
-        if (Array.isArray(body.labels) && body.labels.length) payload.labels = body.labels
-        const r = await gh(`/repos/${owner}/${repo}/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
-        const j = await r.json()
-        send(res, 201, { number: j.number, html_url: j.html_url, title: j.title })
-        return true
-      }
-      // 읽기: 이슈 목록
-      const owner = u.searchParams.get("owner")
-      const repo = u.searchParams.get("repo")
-      if (!owner || !repo) {
-        send(res, 400, { error: "owner·repo가 필요해요." })
-        return true
-      }
-      const r = await gh(`/repos/${owner}/${repo}/issues?state=all&per_page=50`)
-      const data = await r.json()
-      send(res, 200, data.filter((i) => !i.pull_request).map(mapIssue))
-      return true
-    }
-
-    // 쓰기: 이슈/PR 코멘트 생성
-    if (p === "/api/github/comment" && req.method === "POST") {
+    // 쓰기: 이슈 생성 (어드민 → GitHub 프록시 쓰기)
+    if (p === "/api/github/issues" && req.method === "POST") {
       const body = await readJson(req)
-      const { owner, repo, number } = body
-      const text = String(body.body || "").trim()
-      if (!owner || !repo || number == null || !text) {
-        send(res, 400, { error: "owner·repo·number·body 가 필요해요." })
+      const owner = body.owner
+      const repo = body.repo
+      const title = String(body.title || "").trim()
+      if (!owner || !repo || !title) {
+        send(res, 400, { error: "owner·repo·title 이 필요해요." })
         return true
       }
-      const r = await gh(`/repos/${owner}/${repo}/issues/${number}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: text }) })
+      const payload = { title, body: body.body ?? "" }
+      if (Array.isArray(body.labels) && body.labels.length) payload.labels = body.labels
+      const r = await gh(`/repos/${owner}/${repo}/issues`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) })
       const j = await r.json()
-      send(res, 201, { id: j.id, html_url: j.html_url })
+      send(res, 201, { number: j.number, html_url: j.html_url, title: j.title })
       return true
     }
 
@@ -216,37 +178,6 @@ export async function handleGithub(req, res) {
       const r = await gh(`/repos/${owner}/${repo}/issues/${number}/comments`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ body: text }) })
       const j = await r.json()
       send(res, 201, { id: j.id, html_url: j.html_url, body: text })
-      return true
-    }
-
-    if (p === "/api/github/contents") {
-      const owner = u.searchParams.get("owner")
-      const repo = u.searchParams.get("repo")
-      const path = u.searchParams.get("path") || ""
-      if (!owner || !repo) {
-        send(res, 400, { error: "owner·repo가 필요해요." })
-        return true
-      }
-      const r = await gh(`/repos/${owner}/${repo}/contents/${encodeURI(path)}`)
-      const data = await r.json()
-      const arr = Array.isArray(data) ? data : [data]
-      const docs = arr.map(mapDoc).sort((a, b) => (a.type === b.type ? a.name.localeCompare(b.name) : a.type === "dir" ? -1 : 1))
-      send(res, 200, docs)
-      return true
-    }
-
-    if (p === "/api/github/file") {
-      const owner = u.searchParams.get("owner")
-      const repo = u.searchParams.get("repo")
-      const path = u.searchParams.get("path") || ""
-      if (!owner || !repo || !path) {
-        send(res, 400, { error: "owner·repo·path가 필요해요." })
-        return true
-      }
-      const r = await gh(`/repos/${owner}/${repo}/contents/${encodeURI(path)}`)
-      const d = await r.json()
-      const content = d.encoding === "base64" && typeof d.content === "string" ? Buffer.from(d.content, "base64").toString("utf-8") : d.content ?? ""
-      send(res, 200, { content })
       return true
     }
 

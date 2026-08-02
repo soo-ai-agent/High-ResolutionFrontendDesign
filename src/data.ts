@@ -8,7 +8,7 @@
 import type * as S from "./data.source"
 
 // 타입은 서버 소스에서 그대로 재-export 해요.
-export type { Role, ProjectRepo, ProjectItem, ExternalKey, HumanTask, PipelineStage } from "./data.source"
+export type { ProjectRepo, ProjectItem, ExternalKey, HumanTask, PipelineStage } from "./data.source"
 
 // ---- 값 (부팅 시 서버 데이터로 채워짐) ----
 export const REPO: any = {}

@@ -8,9 +8,6 @@ import { useSyncExternalStore } from "react"
 const BASE = "/api/github"
 
 export type GHUser = { login: string; name: string | null; avatar_url: string }
-export type GHRepo = { id: number; full_name: string; name: string; owner: string; default_branch: string; private: boolean; updated_at: string }
-export type GHIssue = { number: number; title: string; body: string | null; state: string; html_url: string; user: string; labels: string[] }
-export type GHDoc = { name: string; path: string; type: "file" | "dir"; size: number }
 
 export class GitHubError extends Error {
   status: number
@@ -120,28 +117,6 @@ async function refreshStatus() {
   }
 }
 
-// ---- 데이터 조회 (모두 서버 프록시 경유) ----
-export async function listRepos(): Promise<GHRepo[]> {
-  const res = await call("/repos")
-  return (await res.json()) as GHRepo[]
-}
-
-export async function listIssues(owner: string, repo: string): Promise<GHIssue[]> {
-  const res = await call(`/issues?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}`)
-  return (await res.json()) as GHIssue[]
-}
-
-export async function listDocs(owner: string, repo: string, path = ""): Promise<GHDoc[]> {
-  const res = await call(`/contents?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`)
-  return (await res.json()) as GHDoc[]
-}
-
-export async function getFileContent(owner: string, repo: string, path: string): Promise<string> {
-  const res = await call(`/file?owner=${encodeURIComponent(owner)}&repo=${encodeURIComponent(repo)}&path=${encodeURIComponent(path)}`)
-  const j = (await res.json()) as { content: string }
-  return j.content ?? ""
-}
-
 // ---- 쓰기 (어드민 → GitHub 프록시 쓰기) ----
 export type CreatedIssue = { number: number; html_url: string; title: string }
 export type CommentResult = { id: number; html_url: string; body?: string }
@@ -149,11 +124,6 @@ export type CommentResult = { id: number; html_url: string; body?: string }
 export async function createIssue(owner: string, repo: string, input: { title: string; body?: string; labels?: string[] }): Promise<CreatedIssue> {
   const res = await call("/issues", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, ...input }) })
   return (await res.json()) as CreatedIssue
-}
-
-export async function addComment(owner: string, repo: string, number: number, body: string): Promise<CommentResult> {
-  const res = await call("/comment", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, number, body }) })
-  return (await res.json()) as CommentResult
 }
 
 // 이슈/PR에 @claude 코멘트를 남겨 Claude GitHub Action을 트리거해요.

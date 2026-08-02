@@ -38,8 +38,6 @@ function touch() {
 const keyN = (repo, n) => `${repo}#${n}`
 
 export const db = {
-  snapshot: () => state,
-
   summary: () => ({
     repos: Object.keys(state.repos).length,
     issues: Object.keys(state.issues).length,

@@ -21,8 +21,6 @@ export const PROJECT = {
   stage: "구현",
 }
 
-export type Role = "human" | "ai" | "both" | "auto"
-
 // Repositories that belong to the single project.
 export const PROJECT_REPOS = [
   { full: "sample-org / admin-web", purpose: "프론트엔드", branch: "main", progress: 71, tasks: 7, prs: 2, fails: 0, synced: true },

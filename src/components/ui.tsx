@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react"
+import { type ReactNode } from "react"
 
 // ---------- Status semantics ----------
 type Tone = "default" | "blue" | "success" | "warning" | "error" | "purple" | "neutral"
@@ -33,10 +33,6 @@ export function Badge({ children, tone }: { children: ReactNode; tone?: Tone }) 
       {children}
     </span>
   )
-}
-
-export function Dot({ tone }: { tone: Tone }) {
-  return <span className={`inline-block h-2 w-2 rounded-full ${TONE_STYLE[tone].dot}`} />
 }
 
 // Human vs AI ownership. Kept visually distinct everywhere so it's always
@@ -180,32 +176,6 @@ export function Tabs({ tabs, active, onChange }: { tabs: string[]; active: strin
           {active === t && <span className="absolute inset-x-3.5 -bottom-px h-0.5 rounded-full bg-blue" />}
         </button>
       ))}
-    </div>
-  )
-}
-
-// ---------- Drawer ----------
-export function Drawer({ open, onClose, title, children, footer }: { open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode }) {
-  useEffect(() => {
-    const h = (e: KeyboardEvent) => e.key === "Escape" && onClose()
-    if (open) window.addEventListener("keydown", h)
-    return () => window.removeEventListener("keydown", h)
-  }, [open, onClose])
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end">
-      <div className="af-overlay absolute inset-0 bg-[#191f28]/25" onClick={onClose} />
-      <aside className="af-drawer relative flex h-full w-full max-w-[440px] flex-col bg-surface shadow-[var(--shadow-drawer)]">
-        <header className="flex items-center justify-between gap-2 border-b border-line px-5 py-4">
-          <div className="min-w-0 text-[15px] font-bold text-text-primary">{title}</div>
-          <div className="flex items-center gap-1">
-            <IconButton label="GitHub에서 열기"><Icon name="github" className="h-5 w-5" /></IconButton>
-            <IconButton label="닫기" onClick={onClose}><Icon name="close" className="h-5 w-5" /></IconButton>
-          </div>
-        </header>
-        <div className="flex-1 overflow-y-auto px-5 py-5">{children}</div>
-        {footer && <footer className="border-t border-line bg-surface-2 px-5 py-4">{footer}</footer>}
-      </aside>
     </div>
   )
 }
