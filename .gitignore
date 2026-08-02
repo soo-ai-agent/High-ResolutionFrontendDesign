@@ -12,3 +12,6 @@ logs/
 .claude-replay.*
 .tmp-*
 server/.data/
+.gradle/
+backend/.data/
+backend/bin/

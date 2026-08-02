@@ -1,0 +1,41 @@
+server:
+  port: ${PORT:8443}
+  address: 0.0.0.0
+
+spring:
+  application:
+    name: agentflow-backend
+  # 기본(로컬/검증): H2 파일 DB. 운영은 prod 프로파일에서 Postgres.
+  datasource:
+    url: jdbc:h2:${MIRROR_DATA_DIR:./.data}/agentflow;AUTO_SERVER=TRUE
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+# 앱 설정
+agentflow:
+  github-api-base: ${GITHUB_API_BASE:https://api.github.com}
+  webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+
+---
+spring:
+  config:
+    activate:
+      on-profile: prod
+  datasource:
+    url: ${DATABASE_URL}
+    driver-class-name: org.postgresql.Driver
+    username: ${DATABASE_USER:}
+    password: ${DATABASE_PASSWORD:}
+  jpa:
+    database-platform: org.hibernate.dialect.PostgreSQLDialect
+    hibernate:
+      ddl-auto: update
