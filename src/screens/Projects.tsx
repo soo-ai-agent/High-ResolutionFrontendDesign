@@ -51,7 +51,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
 
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {PROJECTS.map((p) => (
-            <Card key={p.id} hover onClick={() => navigate("overview")} className="flex flex-col p-5">
+            <Card key={p.id} hover onClick={() => navigate("pipeline")} className="flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Icon name="board" className="h-4.5 w-4.5 text-text-secondary" />

@@ -1,36 +1,21 @@
 import { useState, type ReactNode } from "react"
-import { Icon, IconButton, Badge, RoleChip, SyncMark } from "./ui"
-import { REPO, PHASES, PROJECT, PROJECT_REPOS } from "../data"
+import { Icon, IconButton, Badge, SyncMark } from "./ui"
+import { REPO, PROJECT, PROJECT_REPOS } from "../data"
 import { useServerStatus } from "../lib/status"
 
 const fmtTime = (iso: string) => iso.slice(11, 16)
 
+// MVP 메뉴 — 실동작/준실동작 화면만
 const MENU = [
-  { group: "기획", items: [
-    { key: "overview", label: "개요", icon: "overview" },
+  { group: "흐름", items: [
     { key: "pipeline", label: "진행 흐름", icon: "handoff" },
-    { key: "sources", label: "자료", icon: "doc" },
-    { key: "interview", label: "요구사항 인터뷰", icon: "chat" },
-    { key: "prd", label: "PRD", icon: "doc" },
-    { key: "critic", label: "PRD Critic", icon: "critic" },
-  ] },
-  { group: "설계", items: [
-    { key: "ia", label: "IA", icon: "ia" },
-    { key: "screens", label: "화면 목록", icon: "list" },
-    { key: "flow", label: "화면 흐름도", icon: "flow" },
-    { key: "design-system", label: "디자인 시스템", icon: "palette" },
   ] },
   { group: "개발", items: [
-    { key: "tasks", label: "작업 보드", icon: "board" },
-    { key: "pull-requests", label: "Pull Requests", icon: "pr" },
-    { key: "runs", label: "Actions 실행", icon: "runs" },
-    { key: "tests", label: "테스트", icon: "test" },
     { key: "mirror", label: "GitHub 미러", icon: "sync" },
     { key: "projects-board", label: "Projects 보드", icon: "board" },
   ] },
   { group: "운영", items: [
     { key: "human-tasks", label: "휴먼태스크", icon: "hand" },
-    { key: "releases", label: "배포 및 릴리스", icon: "rocket" },
     { key: "settings", label: "설정", icon: "settings" },
   ] },
 ]
@@ -41,7 +26,6 @@ export default function Layout({ route, navigate, children }: { route: string; n
   return (
     <div className="flex h-screen flex-col bg-app">
       <Header navigate={navigate} onMenu={() => setCollapsed((c) => !c)} />
-      <PhaseStepper route={route} navigate={navigate} />
       <div className="flex min-h-0 flex-1">
         <Sidebar route={route} navigate={navigate} collapsed={collapsed} />
         <main className="min-w-0 flex-1 overflow-y-auto">
@@ -130,55 +114,6 @@ function Header({ navigate, onMenu }: { navigate: (r: string) => void; onMenu: (
         <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" aria-label="계정">{user?.login ? user.login.slice(0, 2).toUpperCase() : "SB"}</button>
       </div>
     </header>
-  )
-}
-
-function PhaseStepper({ route, navigate }: { route: string; navigate: (r: string) => void }) {
-  const phaseRoute: Record<string, string> = { overview: "overview", sources: "sources", interview: "interview", prd: "prd", critic: "prd", ia: "ia", tasks: "tasks", test: "tests", build: "tasks", verify: "tests", deploy: "releases", release: "releases" }
-  const ownerDot: Record<string, string> = { human: "bg-warning", ai: "bg-purple", both: "bg-blue" }
-  const active = PHASES.find((p) => phaseRoute[p.key] === route)
-  return (
-    <div className="shrink-0 border-b border-line bg-surface">
-      <div className="mx-auto flex max-w-[1400px] items-center gap-1 overflow-x-auto px-6 py-2.5">
-        {PHASES.map((p, i) => {
-          const isActive = phaseRoute[p.key] === route
-          const done = p.status === "완료"
-          return (
-            <div key={p.key} className="flex items-center">
-              <button
-                onClick={() => navigate(phaseRoute[p.key] ?? "overview")}
-                title={p.ownerNote}
-                className={`flex items-center gap-2 rounded-full px-3 py-1.5 transition-colors ${isActive ? "bg-blue-light" : "hover:bg-hover"}`}
-              >
-                <span className={`relative flex h-5 w-5 items-center justify-center rounded-full text-[11px] font-bold ${done ? "bg-success text-white" : isActive ? "bg-blue text-white" : "bg-[#eef1f4] text-text-tertiary"}`}>
-                  {done ? <Icon name="check" className="h-3 w-3" /> : i + 1}
-                  <span className={`absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full ring-2 ring-white ${ownerDot[p.owner]}`} />
-                </span>
-                <span className={`whitespace-nowrap text-[13px] font-semibold ${isActive ? "text-blue" : done ? "text-text-primary" : "text-text-tertiary"}`}>{p.label}</span>
-                {!done && p.status !== "대기" && (
-                  <span className={`h-1.5 w-1.5 rounded-full ${p.status === "실행 중" ? "bg-blue" : "bg-warning"}`} />
-                )}
-              </button>
-              {i < PHASES.length - 1 && <span className="mx-0.5 h-px w-4 bg-line" />}
-            </div>
-          )
-        })}
-      </div>
-      {/* Context bar: who owns the current phase + legend */}
-      <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-4 gap-y-1 border-t border-line px-6 py-2">
-        {active && (
-          <div className="flex items-center gap-2">
-            <RoleChip owner={active.owner} />
-            <span className="text-[12px] text-text-secondary">{active.ownerNote}</span>
-          </div>
-        )}
-        <div className="ml-auto flex items-center gap-3 text-[11px] font-medium text-text-tertiary">
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-warning" />사람</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-purple" />AI</span>
-          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-blue" />협업</span>
-        </div>
-      </div>
-    </div>
   )
 }
 

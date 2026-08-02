@@ -1,6 +1,6 @@
 import { useState } from "react"
-import { Icon, Button, Badge, Card, SectionTitle, Drawer, Row, Modal, Toggle, RoleChip } from "../components/ui"
-import { HUMAN_TASKS, RELEASES, AGENTS, AUTOMATION, type HumanTask, type ExternalKey } from "../data"
+import { Icon, Button, Badge, Card, SectionTitle, Row, RoleChip } from "../components/ui"
+import { HUMAN_TASKS, type HumanTask, type ExternalKey } from "../data"
 
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
@@ -326,157 +326,12 @@ function ExternalKeyRow({ k, onSave }: { k: ExternalKey; onSave: () => void }) {
   )
 }
 
-// ============ RELEASES ============
-export function Releases() {
-  const [modal, setModal] = useState(false)
-  return (
-    <div className="space-y-6">
-      <SectionTitle title="배포 및 릴리스" desc="환경별 배포 상태와 릴리스를 관리하세요." />
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card className="p-6">
-          <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Icon name="rocket" className="h-5 w-5 text-success" /><span className="text-[16px] font-bold">Staging</span></div><Badge tone="success">배포 완료</Badge></div>
-          <div className="mt-4 divide-y divide-line">
-            <Row label="최근 배포" value="성공 · 07/29 18:20" />
-            <Row label="Commit" value={<span className="font-mono text-[12px]">a3f92c1</span>} />
-            <Row label="Smoke Test" value={<Badge tone="success">통과</Badge>} />
-          </div>
-          <Button full icon={<Icon name="external" className="h-4 w-4" />}>서비스 열기</Button>
-        </Card>
-
-        <Card className="border-purple/30 bg-purple-light/30 p-6">
-          <div className="flex items-center justify-between"><div className="flex items-center gap-2"><Icon name="rocket" className="h-5 w-5 text-purple" /><span className="text-[16px] font-bold">Production</span></div><Badge tone="purple">승인 대기</Badge></div>
-          <div className="mt-4 divide-y divide-line">
-            <Row label="대상 Release" value="v0.9.2" />
-            <Row label="필수 Check" value={<Badge tone="warning">2/3 통과</Badge>} />
-            <Row label="포함 PR" value="8개" />
-          </div>
-          <Button variant="primary" full icon={<Icon name="rocket" className="h-4 w-4" />} onClick={() => setModal(true)}>Production 배포</Button>
-        </Card>
-      </div>
-
-      {/* deploy timeline */}
-      <Card className="p-6">
-        <h2 className="text-[16px] font-bold">배포 타임라인 · v0.9.1</h2>
-        <div className="mt-5 flex items-center gap-2 overflow-x-auto">
-          {["Build", "Test", "Artifact", "Deploy", "Smoke Test", "Complete"].map((s, i, a) => (
-            <div key={s} className="flex items-center">
-              <div className="flex flex-col items-center gap-1.5"><span className="flex h-7 w-7 items-center justify-center rounded-full bg-success text-white"><Icon name="check" className="h-4 w-4" /></span><span className="text-[12px] font-semibold text-text-secondary">{s}</span></div>
-              {i < a.length - 1 && <span className="mx-2 h-0.5 w-12 bg-success/40" />}
-            </div>
-          ))}
-        </div>
-      </Card>
-
-      <div>
-        <h2 className="mb-3 text-[16px] font-bold">릴리스</h2>
-        <div className="grid gap-3 md:grid-cols-3">
-          {RELEASES.map((r) => (
-            <Card key={r.version} hover className="p-5">
-              <div className="flex items-center justify-between"><span className="text-[18px] font-bold">{r.version}</span><Badge tone={r.env === "Production" ? "purple" : "neutral"}>{r.env}</Badge></div>
-              <div className="mt-2"><Badge>{r.status}</Badge></div>
-              <div className="mt-4 flex gap-4 text-[13px] text-text-secondary"><span>PR {r.prs}</span><span>Issue {r.issues}</span></div>
-              <div className="mt-1 text-[12px] text-text-tertiary">{r.created}</div>
-              <button className="mt-4 text-[13px] font-semibold text-blue hover:underline">Release Note 보기</button>
-            </Card>
-          ))}
-        </div>
-      </div>
-
-      <Modal open={modal} onClose={() => setModal(false)} title="Production에 배포할까요?"
-        footer={<><Button onClick={() => setModal(false)}>취소</Button><Button variant="primary" onClick={() => setModal(false)}>배포하기</Button></>}>
-        <div className="divide-y divide-line">
-          <Row label="대상 Commit" value={<span className="font-mono text-[12px]">a3f92c1</span>} />
-          <Row label="포함 Pull Request" value="8개" />
-          <Row label="데이터베이스 변경" value={<span className="text-warning">마이그레이션 1건</span>} />
-          <Row label="알려진 위험" value="세션 정책 변경" />
-          <Row label="Rollback 기준" value="Smoke Test 실패 시 자동" />
-        </div>
-      </Modal>
-    </div>
-  )
-}
-
-// ============ SETTINGS ============
+// ============ SETTINGS (MVP: 연동만) ============
 export function Settings({ navigate }: { navigate: (r: string) => void }) {
-  const [menu, setMenu] = useState("연동")
-  const [autos, setAutos] = useState(AUTOMATION.map((a) => a.on))
-  const [confirm, setConfirm] = useState<number | null>(null)
-  const items = ["연동", "저장소", "경로", "명령어", "에이전트", "자동화", "환경", "알림"]
-
   return (
-    <div className="grid gap-6 lg:grid-cols-[180px_1fr]">
-      <div>
-        <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-text-disabled">설정</div>
-        {items.map((m) => <button key={m} onClick={() => setMenu(m)} className={`block w-full rounded-[8px] px-3 py-2 text-left text-[13px] font-semibold ${menu === m ? "bg-selected text-blue" : "text-text-secondary hover:bg-hover"}`}>{m}</button>)}
-      </div>
-
-      <div className="space-y-5">
-        <SectionTitle title={`${menu} 설정`} />
-        {menu === "연동" && <GitHubConnect navigate={navigate} />}
-        {menu === "명령어" && (
-          <Card className="divide-y divide-line p-6">
-            {[["Install Command", "pnpm install"], ["Lint Command", "pnpm lint"], ["Type Check Command", "pnpm typecheck"], ["Unit Test Command", "pnpm test"], ["Integration Test Command", "pnpm test:int"], ["Build Command", "pnpm build"]].map(([n, v]) => (
-              <div key={n} className="flex items-center justify-between py-3">
-                <span className="text-[14px] font-semibold text-text-primary">{n}</span>
-                <code className="rounded-[8px] bg-surface-2 px-3 py-1.5 font-mono text-[13px] text-text-secondary">{v}</code>
-              </div>
-            ))}
-          </Card>
-        )}
-
-        {menu === "에이전트" && (
-          <div className="grid gap-4 md:grid-cols-2">
-            {AGENTS.map((a) => (
-              <Card key={a.name} className="p-5">
-                <div className="flex items-center gap-2"><span className={`h-2.5 w-2.5 rounded-full`} style={{ background: a.color === "blue" ? "#3182f6" : a.color === "purple" ? "#7c5cfc" : a.color === "success" ? "#00a86b" : a.color === "warning" ? "#f59f00" : "#f04452" }} /><span className="text-[15px] font-bold">{a.name}</span></div>
-                <div className="mt-3 divide-y divide-line">
-                  <Row label="모델" value={a.model} />
-                  <Row label="최대 Turn" value={a.turns} />
-                  <Row label="Timeout" value={a.timeout} />
-                </div>
-                {a.name === "Repair Agent" && (
-                  <div className="mt-3 space-y-2 rounded-[10px] bg-error-light p-3">
-                    <div className="flex items-center justify-between text-[13px]"><span className="text-text-secondary">최대 자동 수정 횟수</span><b>1회</b></div>
-                    <div className="flex items-center justify-between text-[13px]"><span className="text-text-secondary">동일 오류 반복 시 중단</span><Toggle on onChange={() => {}} /></div>
-                    <div className="flex items-center justify-between text-[13px]"><span className="text-text-secondary">허용 경로 밖 변경 시 중단</span><Toggle on onChange={() => {}} /></div>
-                  </div>
-                )}
-              </Card>
-            ))}
-          </div>
-        )}
-
-        {menu === "자동화" && (
-          <Card className="divide-y divide-line p-6">
-            {AUTOMATION.map((a, i) => (
-              <div key={a.label} className="flex items-center justify-between py-3.5">
-                <div>
-                  <div className="text-[14px] font-semibold text-text-primary">{a.label}{a.danger && <span className="ml-2 rounded bg-error-light px-1.5 py-0.5 text-[11px] font-bold text-error">주의</span>}</div>
-                  {a.note && <div className="text-[12px] text-text-tertiary">최대 {a.note}</div>}
-                </div>
-                <Toggle on={autos[i]} danger={a.danger}
-                  onChange={() => {
-                    if (a.danger && !autos[i]) { setConfirm(i); return }
-                    setAutos((s) => s.map((v, j) => (j === i ? !v : v)))
-                  }} />
-              </div>
-            ))}
-          </Card>
-        )}
-
-        {["저장소", "경로", "환경", "알림"].includes(menu) && (
-          <Card className="divide-y divide-line p-6">
-            {(menu === "경로" ? [["문서 경로", "docs/"], ["프론트엔드 경로", "apps/web/"], ["백엔드 경로", "services/"], ["테스트 경로", "tests/"]] : [["저장소", "sample-org / agent-workflow"], ["기본 브랜치", "main"], ["환경", "Staging, Production"], ["알림 채널", "Slack #agent-flow"]]).map(([n, v]) => (
-              <div key={n} className="flex items-center justify-between py-3"><span className="text-[14px] font-semibold text-text-primary">{n}</span><span className="font-mono text-[13px] text-text-secondary">{v}</span></div>
-            ))}
-          </Card>
-        )}
-
-        <Modal open={confirm !== null} onClose={() => setConfirm(null)} title="위험한 설정을 켤까요?"
-          footer={<><Button onClick={() => setConfirm(null)}>취소</Button><Button variant="primary" onClick={() => { setAutos((s) => s.map((v, j) => (j === confirm ? true : v))); setConfirm(null) }}>켜기</Button></>}>
-          Production 자동 배포는 검토 없이 실서비스에 반영됩니다. 정말 켤까요?
-        </Modal>
-      </div>
+    <div className="space-y-5">
+      <SectionTitle title="연동 설정" desc="GitHub 계정을 연결하면 미러·이슈·웹훅이 실제로 동작해요." />
+      <GitHubConnect navigate={navigate} />
     </div>
   )
 }

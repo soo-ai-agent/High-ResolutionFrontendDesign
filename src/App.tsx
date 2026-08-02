@@ -2,35 +2,17 @@ import { useState, type ReactElement } from "react"
 import Layout from "./components/Layout"
 import Login from "./screens/Login"
 import Projects from "./screens/Projects"
-import Overview from "./screens/Overview"
-import Interview from "./screens/Interview"
 import Pipeline from "./screens/Pipeline"
-import { Sources, PRD, Critic, IA, ScreenList, ScreenDetail, Flow, DesignSystem } from "./screens/Design"
-import { Tasks, PullRequests, Runs, Tests } from "./screens/Dev"
 import Mirror from "./screens/Mirror"
 import Board from "./screens/Board"
-import { HumanTasks, Releases, Settings } from "./screens/Ops"
+import { HumanTasks, Settings } from "./screens/Ops"
 
+// MVP 6화면: 로그인 · 프로젝트 · 진행 흐름 · GitHub 미러 · Projects 보드 · 휴먼태스크 · 설정(연동)
 const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
-  overview: (nav) => <Overview navigate={nav} />,
   pipeline: (nav) => <Pipeline navigate={nav} />,
-  sources: (nav) => <Sources navigate={nav} />,
-  interview: (nav) => <Interview navigate={nav} />,
-  prd: (nav) => <PRD navigate={nav} />,
-  critic: (nav) => <Critic navigate={nav} />,
-  ia: (nav) => <IA navigate={nav} />,
-  screens: (nav) => <ScreenList navigate={nav} />,
-  "screen-detail": (nav) => <ScreenDetail navigate={nav} />,
-  flow: () => <Flow />,
-  "design-system": () => <DesignSystem />,
-  tasks: (nav) => <Tasks navigate={nav} />,
-  "pull-requests": (nav) => <PullRequests navigate={nav} />,
-  runs: () => <Runs />,
-  tests: () => <Tests />,
   mirror: (nav) => <Mirror navigate={nav} />,
   "projects-board": () => <Board />,
   "human-tasks": () => <HumanTasks />,
-  releases: () => <Releases />,
   settings: (nav) => <Settings navigate={nav} />,
 }
 
@@ -45,7 +27,7 @@ export default function App() {
   if (route === "login") return <Login onLogin={() => navigate("projects")} />
   if (route === "projects") return <Projects navigate={navigate} />
 
-  const render = SCREENS[route] ?? SCREENS.overview
+  const render = SCREENS[route] ?? SCREENS.pipeline
   return (
     <Layout route={route} navigate={navigate}>
       <div key={route} className="af-fade">{render(navigate)}</div>
