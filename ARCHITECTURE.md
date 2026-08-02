@@ -47,9 +47,10 @@ sequenceDiagram
 → **상단바**(`Layout.tsx` + `lib/status.ts`)가 "연결됨 · {login}" 으로 바뀜. 토큰은 브라우저에 저장 안 됨(서버 메모리만).
 
 ## 3) 미러 조회 (읽기) — GitHub 미러 / Projects 보드
-1. 화면 마운트 → `src/lib/mirror.ts` 가 **`GET /api/mirror/{summary,issues,pulls,runs,events,board}`** 병렬 호출.
-2. `MirrorController` → `MirrorService.list*()` → **JPA 리포지토리**에서 조회 → DTO로 매핑.
-3. 화면이 표·칸반으로 렌더. (`activeRuns` 는 status≠completed 개수 → 상단바 "Actions N".)
+1. **GitHub 미러**(`Mirror.tsx`) 마운트 → `src/lib/mirror.ts` 로 **`GET /api/mirror/{summary,issues,pulls,runs,events}`** 5개를 병렬(`Promise.all`) 호출.
+2. **Projects 보드**(`Board.tsx`)는 **`GET /api/mirror/{issues,pulls}`** 2개만 호출하고, 칸반 컬럼은 이슈/PR에 실린 `boardStatus`(웹훅 [8]로 채워짐)에서 **클라이언트가 파생**해요(`matchBoardColumn`). → `/api/mirror/board` 엔드포인트는 서버에 있지만 **현재 UI는 호출하지 않아요**.
+3. `MirrorController`(GET) → `MirrorService.summary()` / `list*()` → **JPA 조회** → DTO 매핑.
+4. 화면이 표·칸반으로 렌더. (`activeRuns` = status 가 있고 `completed` 가 아닌 실행 수 → 상단바 "Actions N".)
 
 ## 4) 확장 필드 편집 (stage/priority) — PATCH
 1. `Mirror.tsx` 의 `AdminSelect` 변경 → `mirror.setIssueAdmin()` → **`PATCH /api/mirror/issues {repo,number,stage}`**.

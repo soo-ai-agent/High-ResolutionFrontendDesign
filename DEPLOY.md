@@ -32,11 +32,11 @@ GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32) MIRROR_DATA_DIR=./.data PORT=8443 
 ```
 
 ### 프론트만 따로(HMR) 개발할 때
-Vite dev(`pnpm dev`)는 `/api` 를 백엔드로 프록시해요(기본 `http://127.0.0.1:8080`, `BACKEND_URL` 로 변경).
-백엔드를 8080으로 띄우고 프론트를 붙이세요:
+`pnpm backend` 는 백엔드를 **8080**으로 띄우고, `pnpm dev`(Vite 8443)는 `/api` 를 그 8080으로 프록시해요
+(기본 `BACKEND_URL=http://127.0.0.1:8080`). 두 터미널에서:
 ```bash
-PORT=8080 pnpm --dir backend exec ./gradlew bootRun   # 백엔드(8080)
-BACKEND_URL=http://127.0.0.1:8080 pnpm dev            # 프론트(8443, /api→8080)
+pnpm backend    # 백엔드(8080) — cd backend && PORT=8080 ./gradlew bootRun
+pnpm dev        # 프론트(8443, /api → 8080 프록시)
 ```
 헬스체크: `GET /api/health` → `{"ok":true}`
 

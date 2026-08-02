@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview",
-    "backend": "cd backend && ./gradlew bootRun",
+    "backend": "cd backend && PORT=8080 ./gradlew bootRun",
     "format": "oxfmt"
   },
   "dependencies": {
