@@ -26,16 +26,11 @@ agentflow:
   webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
 
 ---
+# prod: DataSource 는 DataSourceConfig 빈이 DATABASE_URL(jdbc 또는 postgres:// DSN)에서 구성해요.
 spring:
   config:
     activate:
       on-profile: prod
-  datasource:
-    url: ${DATABASE_URL}
-    driver-class-name: org.postgresql.Driver
-    username: ${DATABASE_USER:}
-    password: ${DATABASE_PASSWORD:}
   jpa:
-    database-platform: org.hibernate.dialect.PostgreSQLDialect
     hibernate:
-      ddl-auto: update
+      ddl-auto: update  # dialect 는 연결에서 자동 감지 (PostgreSQL)

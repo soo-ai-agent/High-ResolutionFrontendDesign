@@ -17,7 +17,7 @@
 | `GITHUB_WEBHOOK_SECRET` | 운영 필수 | (없음) | 웹훅 `x-hub-signature-256` HMAC 키. 미설정 시 검증 생략(개발용). |
 | `GITHUB_API_BASE` | — | `https://api.github.com` | GH Enterprise/테스트 스텁용. |
 | `SPRING_PROFILES_ACTIVE` | 운영 | (default=H2) | `prod` → Postgres. |
-| `DATABASE_URL` | prod | — | Postgres JDBC URL(+ `DATABASE_USER`/`DATABASE_PASSWORD`). |
+| `DATABASE_URL` | prod | — | 두 형식 지원: `jdbc:postgresql://host:5432/db`(+ `DATABASE_USER`/`DATABASE_PASSWORD`) **또는** `postgres://user:pass@host:5432/db` DSN(Fly/Render/Heroku). `prod` 프로파일이면 JPA가 테이블을 자동 생성(ddl-auto=update). |
 
 > PAT는 환경 변수가 아니라 **런타임에 설정 › 연동**에서 연결해요(서버 메모리). 재시작 시 사라져요.
 
@@ -58,12 +58,16 @@ curl -L https://fly.io/install.sh | sh && fly auth login
 fly apps create <내-앱이름>                 # fly.toml 의 app 값도 동일하게
 fly volumes create data --region nrt --size 1
 fly secrets set GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
-# (운영 Postgres) fly secrets set SPRING_PROFILES_ACTIVE=prod DATABASE_URL=postgres://...
+# 운영 Postgres(권장) — attach 가 DATABASE_URL(postgres:// DSN)을 자동 주입하고, 백엔드가 그 형식을 지원해요:
+fly postgres create --name <앱>-db --region nrt
+fly postgres attach <앱>-db            # → DATABASE_URL 시크릿 설정됨
+fly secrets set SPRING_PROFILES_ACTIVE=prod
 fly deploy
 curl https://<앱>.fly.dev/api/health        # → {"ok":true}
 ```
 - `min_machines_running=1`(상시가동)로 웹훅 콜드스타트 누락 방지. VM 512MB(JVM).
-- H2 파일은 `/data` 볼륨에 영속. 다중 머신/영속 강화가 필요하면 **Postgres**(`prod`)로.
+- **Postgres(`prod`)** 를 붙이면 JPA가 테이블을 자동 생성(ddl-auto=update)하고 재시작·다중 머신에도 데이터가 유지돼요.
+  Postgres 미사용 시 기본 H2 파일이 `/data` 볼륨에 영속(단일 머신).
 
 ## 인증(확장)
 현재 단일 사용자 PAT(서버 메모리). 다중 사용자·팀이면 Spring Security + GitHub OAuth 로 확장.

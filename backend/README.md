@@ -30,7 +30,7 @@ GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32) MIRROR_DATA_DIR=./.data PORT=8443 
 | `GITHUB_WEBHOOK_SECRET` | (없음) | 웹훅 HMAC 키. 미설정 시 검증 생략(개발용) |
 | `GITHUB_API_BASE` | api.github.com | GH Enterprise/테스트 스텁용 |
 | `SPRING_PROFILES_ACTIVE` | (default=H2) | `prod` → Postgres |
-| `DATABASE_URL` | — | prod 프로파일의 JDBC URL |
+| `DATABASE_URL` | — | prod: `jdbc:postgresql://…`(+`DATABASE_USER`/`DATABASE_PASSWORD`) 또는 `postgres://user:pass@host/db` DSN. `DataSourceConfig` 가 둘 다 파싱. |
 
 ## Docker
 ```bash
