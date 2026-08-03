@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, EmptyState, RoleChip } from "../components/ui"
 import { BUILD_PHASES, type ProjectItem } from "../data"
-import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, getTaskInsight, reviewTask, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
+import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, kickoffTask, getTaskInsight, reviewTask, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
 
 const STATUS_TONE: Record<string, "success" | "blue" | "warning" | "purple"> = { "완료": "success", "진행 중": "blue", "대기": "warning", "검토 대기": "purple" }
 const OWNERS: Task["owner"][] = ["ai", "human", "auto"]
@@ -101,6 +101,13 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     if (!sel) return
     const updated = await syncTaskIssue(project.id, sel.id)
     setTasks((ts) => ts.map((t) => (t.id === updated.id ? updated : t)))
+  })
+
+  const kickoff = () => run(async () => {
+    if (!sel) return
+    const updated = await kickoffTask(project.id, sel.id)
+    setTasks((ts) => ts.map((t) => (t.id === updated.id ? updated : t)))
+    setInsight(await getTaskInsight(project.id, sel.id))
   })
 
   const review = (action: "approve" | "feedback") => run(async () => {
@@ -206,6 +213,22 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                     <Select label="추정" value={draft.estimate ?? "M"} onChange={(v) => setDraft({ ...draft, estimate: v })} options={ESTIMATES} />
                     <Select label="상태" value={draft.status ?? "대기"} onChange={(v) => setDraft({ ...draft, status: v })} options={STATUSES} />
                   </div>
+
+                  {/* 원클릭 에이전트 착수 — ai 담당 작업만. 이슈 생성 + @claude 착수 코멘트 */}
+                  {sel.owner === "ai" && (sel.status === "대기" || sel.status === "진행 중") && (
+                    <div className="rounded-[12px] border-2 border-blue/25 bg-blue-light p-4">
+                      <div className="mb-1 flex items-center gap-2 text-[13px] font-bold text-blue"><Icon name="sparkle" className="h-4 w-4" />에이전트 착수</div>
+                      <p className="mb-3 text-[12px] text-text-secondary">
+                        이슈가 없으면 만들고, @claude 멘션 코멘트로 작업 내용·PR 제목 규칙(<code className="rounded bg-surface px-1 font-mono">[{sel.code}]</code>)·완료 기준을 전달해요.
+                        저장소에 Claude GitHub App(claude-code-action)이 설치돼 있으면 에이전트가 브랜치를 만들어 구현하고 PR 을 올려요.
+                      </p>
+                      <div className="flex justify-end">
+                        <Button variant="primary" size="sm" onClick={kickoff} disabled={busy} icon={<Icon name="bolt" className="h-4 w-4" />}>
+                          {busy ? "착수 중…" : sel.status === "대기" ? "에이전트 착수" : "착수 지시 다시 보내기"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* 검토 대기 — 완료는 사람만. 승인하거나 피드백으로 재개 */}
                   {sel.status === "검토 대기" && (

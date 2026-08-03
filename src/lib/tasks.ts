@@ -55,6 +55,10 @@ export const deleteTask = (projectId: string, taskId: string) =>
 export const syncTaskIssue = (projectId: string, taskId: string) =>
   j<Task>(`/api/mirror/projects/${projectId}/tasks/${taskId}/sync-issue`, { method: "POST" })
 
+// 원클릭 에이전트 착수 — 이슈 생성(없으면) + @claude 착수 코멘트 + 진행 중 전환
+export const kickoffTask = (projectId: string, taskId: string) =>
+  j<Task>(`/api/mirror/projects/${projectId}/tasks/${taskId}/kickoff`, { method: "POST" })
+
 // ---- 진행·결과 (활동 이력 + 연결 이슈·PR) ----
 export type TaskActivity = { at: string; kind: string; note: string }
 export type TaskPull = { number: number; title: string; state: string | null; merged: boolean; url: string | null }

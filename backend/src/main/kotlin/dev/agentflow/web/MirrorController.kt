@@ -89,6 +89,10 @@ class MirrorController(
   @PostMapping("/projects/{id}/tasks/{taskId}/sync-issue")
   fun syncTaskIssue(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.syncIssue(id, taskId)
 
+  // 원클릭 에이전트 착수 — 이슈 생성(없으면) + @claude 착수 코멘트 + 진행 중 전환.
+  @PostMapping("/projects/{id}/tasks/{taskId}/kickoff")
+  fun kickoffTask(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.kickoff(id, taskId)
+
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =
     taskService.review(id, taskId, req)

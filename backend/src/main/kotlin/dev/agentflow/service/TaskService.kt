@@ -101,11 +101,40 @@ class TaskService(
   fun syncIssue(projectId: String, taskId: String): TaskDto {
     val t = find(projectId, taskId)
     if (t.issueNumber != null) throw ResponseStatusException(HttpStatus.CONFLICT, "이미 이슈 #${t.issueNumber} 로 동기화됐어요.")
+    val (project, owner, name) = coordsOf(projectId, t)
+    createAndLinkIssue(project, t, owner, name)
+    return tasks.save(t).toDto()
+  }
+
+  // 원클릭 에이전트 착수 — 이슈가 없으면 만들고, @claude 멘션 코멘트로 코딩 에이전트에게
+  // 작업 지시(내용·PR 제목 규칙·완료 기준)를 전달해요. 저장소에 Claude GitHub App
+  // (claude-code-action)이 설치돼 있어야 코멘트가 실제 구현 작업으로 이어져요.
+  fun kickoff(projectId: String, taskId: String): TaskDto {
+    val t = find(projectId, taskId)
+    if (t.owner != "ai") throw ResponseStatusException(HttpStatus.BAD_REQUEST, "에이전트 착수는 담당이 ai 인 작업만 할 수 있어요.")
+    when (t.status) {
+      "완료" -> throw ResponseStatusException(HttpStatus.CONFLICT, "이미 완료된 작업이에요.")
+      "검토 대기" -> throw ResponseStatusException(HttpStatus.CONFLICT, "검토 대기 중이에요 — 보완이 필요하면 피드백으로 재개하세요.")
+    }
+    val (project, owner, name) = coordsOf(projectId, t)
+    if (t.issueNumber == null) createAndLinkIssue(project, t, owner, name)
+    gitHub.claudeComment(owner, name, t.issueNumber!!, kickoffPrompt(project, t))
+    t.status = "진행 중"
+    t.updatedAt = Instant.now().toString()
+    record(t.id, "착수", "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
+    return tasks.save(t).toDto()
+  }
+
+  private fun coordsOf(projectId: String, t: TaskEntity): Triple<ProjectEntity, String, String> {
     val project = projects.findById(projectId).orElse(null)
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
     val repo = project.repos.firstOrNull { it.name == t.repo }
       ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "태스크의 담당 저장소(${t.repo})가 프로젝트에 없어요.")
     val (owner, name) = RepoCoords.of(project.org, repo)
+    return Triple(project, owner, name)
+  }
+
+  private fun createAndLinkIssue(project: ProjectEntity, t: TaskEntity, owner: String, name: String) {
     val body = buildString {
       appendLine(t.detail.ifBlank { t.title })
       appendLine()
@@ -121,7 +150,19 @@ class TaskService(
     t.lastIssueState = "open"
     t.updatedAt = Instant.now().toString()
     record(t.id, "이슈 연결", "GitHub 이슈 #${created.number} 생성·연결")
-    return tasks.save(t).toDto()
+  }
+
+  private fun kickoffPrompt(p: ProjectEntity, t: TaskEntity) = buildString {
+    appendLine("[${t.code}] ${t.title} 작업을 시작해 주세요.")
+    appendLine()
+    appendLine("## 작업 내용")
+    appendLine(t.detail.ifBlank { t.title })
+    appendLine()
+    appendLine("## 진행 방법")
+    appendLine("- 이 저장소에 브랜치를 만들어 구현하고 PR 을 올려 주세요.")
+    appendLine("- PR 제목은 반드시 `[${t.code}]` 로 시작해 주세요 — 어드민이 이 작업에 자동으로 연결해요.")
+    appendLine("- 구현이 끝나고 PR 이 머지되면 이 이슈를 닫아 주세요. 이슈가 닫히면 어드민에서 '검토 대기'가 되고, 완료 승인은 사람이 해요.")
+    appendLine("- 컨텍스트: 프로젝트 '${p.name}' · 단계 ${t.phase} · 우선순위 ${t.priority} · 추정 ${t.estimate}")
   }
 
   // 진행·결과 조회 — 활동 이력 + 미러의 연결 이슈 상태 + 코드([T-00x])로 매칭되는 PR.
