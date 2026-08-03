@@ -23,7 +23,8 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
     let msg = `요청 실패 (${res.status})`
     try {
       const b = await res.json()
-      if (b?.error) msg = b.error
+      if (b?.message) msg = b.message
+      else if (b?.error) msg = b.error
     } catch {
       // ignore
     }

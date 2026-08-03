@@ -1,6 +1,10 @@
 server:
   port: ${PORT:8443}
   address: 0.0.0.0
+  error:
+    # ResponseStatusException 의 reason(한국어 안내)을 에러 응답 body 에 포함 —
+    # 프론트가 사용자에게 행동 가능한 메시지를 보여줄 수 있게.
+    include-message: always
 
 spring:
   application:

@@ -4,6 +4,7 @@ import dev.agentflow.dto.*
 import dev.agentflow.service.MirrorService
 import dev.agentflow.service.ProjectDocService
 import dev.agentflow.service.ProjectService
+import dev.agentflow.service.TaskService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
 import org.springframework.web.bind.annotation.*
@@ -15,6 +16,7 @@ class MirrorController(
   private val mirror: MirrorService,
   private val projects: ProjectService,
   private val docs: ProjectDocService,
+  private val taskService: TaskService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -59,10 +61,33 @@ class MirrorController(
     if (dto.id.isBlank() || dto.name.isBlank())
       throw ResponseStatusException(HttpStatus.BAD_REQUEST, "id·name 이 필요해요.")
     val created = projects.create(dto)
-    // 문서 초안(PRD·IA)은 백그라운드로 — 에이전트 호출이 길어도 생성 응답을 막지 않는다.
-    Thread.startVirtualThread { docs.generateAll(created.id) }
+    // 문서(PRD·IA) → 작업 분해 순서로 백그라운드 생성 — 생성 응답을 막지 않는다.
+    Thread.startVirtualThread {
+      docs.generateAll(created.id)
+      runCatching { taskService.generate(created.id) }
+    }
     return ResponseEntity.status(HttpStatus.CREATED).body(created)
   }
+
+  // ---- 작업 (프로젝트별 태스크) ----
+  @GetMapping("/projects/{id}/tasks")
+  fun listTasks(@PathVariable id: String): List<TaskDto> = taskService.list(id)
+
+  @PostMapping("/projects/{id}/tasks/generate")
+  fun generateTasks(@PathVariable id: String): List<TaskDto> = taskService.generate(id)
+
+  @PatchMapping("/projects/{id}/tasks/{taskId}")
+  fun patchTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskPatchRequest): TaskDto =
+    taskService.patch(id, taskId, req)
+
+  @DeleteMapping("/projects/{id}/tasks/{taskId}")
+  fun deleteTask(@PathVariable id: String, @PathVariable taskId: String): Map<String, Any> {
+    taskService.delete(id, taskId)
+    return mapOf("ok" to true)
+  }
+
+  @PostMapping("/projects/{id}/tasks/{taskId}/sync-issue")
+  fun syncTaskIssue(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.syncIssue(id, taskId)
 
   // ---- 프로젝트 문서 (PRD·IA 등) ----
   @GetMapping("/projects/{id}/docs/{type}")

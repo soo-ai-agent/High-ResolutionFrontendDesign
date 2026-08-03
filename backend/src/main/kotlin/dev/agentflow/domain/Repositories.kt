@@ -33,3 +33,7 @@ interface MetaRepository : JpaRepository<MetaEntity, String>
 interface ProjectDocRepository : JpaRepository<ProjectDocEntity, String> {
   fun findByProjectIdAndDocType(projectId: String, docType: String): ProjectDocEntity?
 }
+
+interface TaskRepository : JpaRepository<TaskEntity, String> {
+  fun findByProjectIdOrderBySeq(projectId: String): List<TaskEntity>
+}

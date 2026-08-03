@@ -39,6 +39,38 @@ data class ProjectDocDto(
 )
 data class DocUpdateRequest(val title: String?, val client: String?, val author: String?, val contentMd: String?)
 
+// ---- 작업 (프로젝트별 태스크) ----
+data class TaskDto(
+  val id: String,
+  val projectId: String,
+  val seq: Int,
+  val code: String,
+  val title: String,
+  val detail: String = "",
+  val domain: String = "",
+  val phase: String = "",
+  val repo: String = "",
+  val owner: String = "ai",
+  val priority: String = "P2",
+  val estimate: String = "M",
+  val status: String = "대기",
+  val issueNumber: Long? = null,
+  val issueUrl: String? = null,
+  val source: String = "template",
+  val updatedAt: String = "",
+)
+data class TaskPatchRequest(
+  val title: String? = null,
+  val detail: String? = null,
+  val domain: String? = null,
+  val phase: String? = null,
+  val repo: String? = null,
+  val owner: String? = null,
+  val priority: String? = null,
+  val estimate: String? = null,
+  val status: String? = null,
+)
+
 // ---- GitHub 프록시 요청 ----
 data class ConnectRequest(val token: String?)
 data class IssueCreateRequest(val owner: String?, val repo: String?, val title: String?, val body: String?, val labels: List<String>?)

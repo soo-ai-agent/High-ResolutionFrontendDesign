@@ -24,6 +24,7 @@ class GitHubService(
     401 -> "토큰이 유효하지 않아요. 다시 확인해 주세요."
     403 -> "요청 한도를 초과했거나 접근 권한이 없어요."
     404 -> "대상을 찾을 수 없어요."
+    410 -> "저장소에서 Issues 기능이 꺼져 있어요. GitHub 저장소 Settings → Features 에서 Issues 를 켜 주세요."
     else -> "GitHub 요청에 실패했어요 ($status)."
   }
 

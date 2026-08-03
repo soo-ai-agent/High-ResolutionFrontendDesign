@@ -10,6 +10,7 @@ import dev.agentflow.dto.ProjectRepo
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
+import dev.agentflow.util.RepoCoords
 import java.time.Instant
 import java.time.LocalDate
 
@@ -99,20 +100,14 @@ class ProjectDocService(
     appendLine("설명: ${p.desc}")
     appendLine("단계: ${p.stage}")
     appendLine("저장소:")
-    p.repos.forEach { appendLine("- ${coordsOf(p, it).let { (o, n) -> "$o/$n" }} (${it.purpose})") }
-  }
-
-  // 저장소 좌표 — URL 이 있으면 URL 의 owner/이름, 없으면 프로젝트 org/이름.
-  private fun coordsOf(p: ProjectEntity, r: ProjectRepo): Pair<String, String> {
-    val m = Regex("""github\.com[:/]+([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?].*)?$""").find(r.url)
-    return if (m != null) m.groupValues[1] to m.groupValues[2] else p.org to r.name
+    p.repos.forEach { appendLine("- ${RepoCoords.of(p.org, it).let { (o, n) -> "$o/$n" }} (${it.purpose})") }
   }
 
   // 실제 저장소에서 메타·파일 구조·매니페스트·README 를 수집해 분석 자료로 만든다.
   // 접근 불가(비공개+토큰 없음, 존재하지 않는 org 등)한 저장소는 조용히 건너뛰어요.
   private fun collectCodeContext(p: ProjectEntity): String? {
     val parts = p.repos.take(3).mapNotNull { r ->
-      val (owner, name) = coordsOf(p, r)
+      val (owner, name) = RepoCoords.of(p.org, r)
       val meta = gitHub.repoMeta(owner, name) ?: return@mapNotNull null
       val branch = meta.path("default_branch").asText("main")
       val desc = meta.path("description").asText("")

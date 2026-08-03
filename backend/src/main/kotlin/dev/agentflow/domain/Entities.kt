@@ -131,3 +131,26 @@ class ProjectDocEntity(
   @Column(length = 100000) var contentMd: String = "",
   var updatedAt: String = "",
 )
+
+// 프로젝트별 작업(태스크) — 문서(PRD·IA)에서 에이전트(키 없으면 템플릿)가 분해하고,
+// 관리자가 수정. 태스크별로 GitHub 이슈에 동기화할 수 있어요.
+@Entity
+class TaskEntity(
+  @Id var id: String = "", // "<projectId>:<seq>"
+  var projectId: String = "",
+  var seq: Int = 0,
+  var code: String = "", // T-001
+  @Column(length = 512) var title: String = "",
+  @Column(length = 4000) var detail: String = "",
+  var domain: String = "",
+  var phase: String = "", // 스키마/프론트엔드/백엔드/외부 키 발급/QA/릴리즈
+  var repo: String = "", // 담당 저장소 이름
+  @Column(name = "task_owner") var owner: String = "ai", // ai | human | auto
+  var priority: String = "P2",
+  var estimate: String = "M",
+  var status: String = "대기", // 대기/진행 중/완료
+  var issueNumber: Long? = null,
+  @Column(length = 512) var issueUrl: String? = null,
+  var source: String = "template", // agent | template | human
+  var updatedAt: String = "",
+)
