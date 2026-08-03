@@ -59,6 +59,7 @@ data class TaskDto(
   val source: String = "template",
   val updatedAt: String = "",
 )
+data class TaskReviewRequest(val action: String?, val comment: String?)
 data class TaskPatchRequest(
   val title: String? = null,
   val detail: String? = null,

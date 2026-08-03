@@ -151,6 +151,7 @@ class TaskEntity(
   var status: String = "대기", // 대기/진행 중/완료
   var issueNumber: Long? = null,
   @Column(length = 512) var issueUrl: String? = null,
+  var lastIssueState: String? = null, // 마지막으로 본 이슈 상태 — 전이(닫힘/재오픈)에만 반응하기 위해
   var source: String = "template", // agent | template | human
   var updatedAt: String = "",
 )

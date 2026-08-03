@@ -15,6 +15,7 @@ import dev.agentflow.dto.TaskDto
 import dev.agentflow.dto.TaskInsightDto
 import dev.agentflow.dto.TaskPatchRequest
 import dev.agentflow.dto.TaskPullDto
+import dev.agentflow.dto.TaskReviewRequest
 import dev.agentflow.util.Json
 import dev.agentflow.util.RepoCoords
 import org.springframework.http.HttpStatus
@@ -117,6 +118,7 @@ class TaskService(
     val created = gitHub.createIssue(owner, name, IssueCreateRequest(owner, name, "[${t.code}] ${t.title}", body, labels))
     t.issueNumber = created.number
     t.issueUrl = created.html_url
+    t.lastIssueState = "open"
     t.updatedAt = Instant.now().toString()
     record(t.id, "이슈 연결", "GitHub 이슈 #${created.number} 생성·연결")
     return tasks.save(t).toDto()
@@ -137,7 +139,10 @@ class TaskService(
     return TaskInsightDto(acts, issueState, prs)
   }
 
-  // 미러와 동기화: 이슈 미연결이면 제목 접두([T-00x])로 자동 연결, 연결 이슈가 닫히면 자동 완료.
+  // 미러와 동기화: 이슈 미연결이면 제목 접두([T-00x])로 자동 연결.
+  // 이슈 상태는 "전이"에만 반응해요(lastIssueState 비교) — 닫히면 검토 대기(완료는 사람만),
+  // 검토 대기 중 이슈가 다시 열리면 진행 중으로 복귀. 피드백으로 재개한 태스크가
+  // 여전히 닫혀 있는 이슈 때문에 검토 대기로 되돌아가지 않게 하기 위한 구조예요.
   private fun reconcile(project: ProjectEntity, t: TaskEntity): TaskEntity {
     val full = fullRepoOf(project, t.repo) ?: return t
     var dirty = false
@@ -150,11 +155,17 @@ class TaskService(
       }
     }
     val n = t.issueNumber
-    if (n != null && t.status != "완료") {
-      val issue = issues.findByRepoAndNumber(full, n)
-      if (issue?.state == "closed") {
-        t.status = "완료"
-        record(t.id, "자동 완료", "연결 이슈 #$n 닫힘 → 완료 처리")
+    if (n != null) {
+      val state = issues.findByRepoAndNumber(full, n)?.state
+      if (state != null && state != t.lastIssueState) {
+        if (state == "closed" && t.status != "완료" && t.status != "검토 대기") {
+          t.status = "검토 대기"
+          record(t.id, "검토 대기", "연결 이슈 #$n 닫힘 → 검토 대기. 완료는 사람이 승인해요.")
+        } else if (state == "open" && t.status == "검토 대기") {
+          t.status = "진행 중"
+          record(t.id, "재개", "이슈 #$n 다시 열림 → 진행 중")
+        }
+        t.lastIssueState = state
         dirty = true
       }
     }
@@ -163,6 +174,41 @@ class TaskService(
       tasks.save(t)
     }
     return t
+  }
+
+  // 검토 처리 — 완료 승인(approve)은 사람만의 행동, 피드백(feedback)은 진행 중으로 재개.
+  // 피드백은 연결 이슈가 있고 PAT 이 연결돼 있으면 이슈를 다시 열고 @claude 코멘트로 전달해
+  // 에이전트가 이어서 작업하게 해요(실패해도 로컬 재개는 유지).
+  fun review(projectId: String, taskId: String, req: TaskReviewRequest): TaskDto {
+    val t = find(projectId, taskId)
+    when (req.action) {
+      "approve" -> {
+        t.status = "완료"
+        record(t.id, "완료", "사람이 검토 승인 → 완료" + (req.comment?.trim().takeUnless { it.isNullOrBlank() }?.let { " — $it" } ?: ""))
+      }
+      "feedback" -> {
+        val fb = req.comment?.trim().orEmpty()
+        if (fb.isEmpty()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "피드백 내용을 입력해 주세요.")
+        t.status = "진행 중"
+        record(t.id, "피드백", "$fb → 진행 중으로 재개")
+        val n = t.issueNumber
+        if (n != null) {
+          val project = projects.findById(projectId).orElse(null)
+          val repo = project?.repos?.firstOrNull { it.name == t.repo }
+          if (project != null && repo != null) {
+            val (owner, name) = RepoCoords.of(project.org, repo)
+            runCatching { gitHub.reopenIssue(owner, name, n) }
+              .onSuccess { record(t.id, "재개", "이슈 #$n 다시 열음") }
+            runCatching { gitHub.claudeComment(owner, name, n, fb) }
+              .onSuccess { record(t.id, "이슈 코멘트", "@claude 멘션으로 피드백 전달 — 에이전트 재개 트리거") }
+          }
+        }
+      }
+      else -> throw ResponseStatusException(HttpStatus.BAD_REQUEST, "action 은 approve 또는 feedback 이어야 해요.")
+    }
+    t.source = "human"
+    t.updatedAt = Instant.now().toString()
+    return tasks.save(t).toDto()
   }
 
   private fun fullRepoOf(project: ProjectEntity, repoName: String): String? {

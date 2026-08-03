@@ -89,6 +89,10 @@ class MirrorController(
   @PostMapping("/projects/{id}/tasks/{taskId}/sync-issue")
   fun syncTaskIssue(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.syncIssue(id, taskId)
 
+  @PostMapping("/projects/{id}/tasks/{taskId}/review")
+  fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =
+    taskService.review(id, taskId, req)
+
   @GetMapping("/projects/{id}/tasks/{taskId}/insight")
   fun taskInsight(@PathVariable id: String, @PathVariable taskId: String): TaskInsightDto = taskService.insight(id, taskId)
 

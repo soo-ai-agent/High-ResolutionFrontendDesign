@@ -62,3 +62,11 @@ export type TaskInsight = { activity: TaskActivity[]; issueState: string | null;
 
 export const getTaskInsight = (projectId: string, taskId: string) =>
   j<TaskInsight>(`/api/mirror/projects/${projectId}/tasks/${taskId}/insight`)
+
+// 검토 처리: approve = 사람이 완료 승인, feedback = 피드백 남기고 진행 중으로 재개
+export const reviewTask = (projectId: string, taskId: string, action: "approve" | "feedback", comment?: string) =>
+  j<Task>(`/api/mirror/projects/${projectId}/tasks/${taskId}/review`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, comment }),
+  })

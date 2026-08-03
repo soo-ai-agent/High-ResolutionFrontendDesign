@@ -85,6 +85,13 @@ class GitHubService(
     return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), text)
   }
 
+  fun reopenIssue(owner: String, repo: String, number: Long) {
+    val t = tokenOr401()
+    translate {
+      client.patch().uri("/repos/{o}/{r}/issues/{n}", owner, repo, number).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(mapOf("state" to "open")).retrieve().toBodilessEntity()
+    }
+  }
+
   // ---- 웹훅(레포지토리 훅) 관리 ----
   fun listHooks(owner: String, repo: String): List<GHHook> {
     val t = tokenOr401()

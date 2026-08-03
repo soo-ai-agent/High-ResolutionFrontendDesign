@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, EmptyState, RoleChip } from "../components/ui"
 import { BUILD_PHASES, type ProjectItem } from "../data"
-import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, getTaskInsight, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
+import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, getTaskInsight, reviewTask, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
 
-const STATUS_TONE: Record<string, "success" | "blue" | "warning"> = { "완료": "success", "진행 중": "blue", "대기": "warning" }
+const STATUS_TONE: Record<string, "success" | "blue" | "warning" | "purple"> = { "완료": "success", "진행 중": "blue", "대기": "warning", "검토 대기": "purple" }
 const OWNERS: Task["owner"][] = ["ai", "human", "auto"]
 const PRIORITIES = ["P1", "P2", "P3"]
 const ESTIMATES = ["S", "M", "L"]
-const STATUSES = ["대기", "진행 중", "완료"]
+const STATUSES = ["대기", "진행 중", "검토 대기", "완료"]
 
 export default function TasksScreen({ project }: { project: ProjectItem | null }) {
   const [tasks, setTasks] = useState<Task[]>([])
@@ -17,6 +17,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
   const [selId, setSelId] = useState<string | null>(null)
   const [draft, setDraft] = useState<TaskPatch>({})
   const [insight, setInsight] = useState<TaskInsight | null>(null)
+  const [feedback, setFeedback] = useState("")
 
   const sel = tasks.find((t) => t.id === selId) ?? null
 
@@ -100,6 +101,14 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     if (!sel) return
     const updated = await syncTaskIssue(project.id, sel.id)
     setTasks((ts) => ts.map((t) => (t.id === updated.id ? updated : t)))
+  })
+
+  const review = (action: "approve" | "feedback") => run(async () => {
+    if (!sel) return
+    const updated = await reviewTask(project.id, sel.id, action, action === "feedback" ? feedback : undefined)
+    setTasks((ts) => ts.map((t) => (t.id === updated.id ? updated : t)))
+    setFeedback("")
+    setInsight(await getTaskInsight(project.id, sel.id))
   })
 
   const counts = {
@@ -198,12 +207,27 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                     <Select label="상태" value={draft.status ?? "대기"} onChange={(v) => setDraft({ ...draft, status: v })} options={STATUSES} />
                   </div>
 
+                  {/* 검토 대기 — 완료는 사람만. 승인하거나 피드백으로 재개 */}
+                  {sel.status === "검토 대기" && (
+                    <div className="rounded-[12px] border-2 border-purple/30 bg-purple-light p-4">
+                      <div className="mb-1 flex items-center gap-2 text-[13px] font-bold text-purple"><Icon name="hand" className="h-4 w-4" />검토 대기 — 사람 확인이 필요해요</div>
+                      <p className="mb-3 text-[12px] text-text-secondary">결과(이슈·PR)를 확인한 뒤 완료를 승인하세요. 보완이 필요하면 피드백을 남기면 진행 중으로 재개되고, 연결 이슈가 있으면 다시 열어 @claude 코멘트로 전달해요.</p>
+                      <textarea value={feedback} onChange={(e) => setFeedback(e.target.value)}
+                        placeholder="피드백 (예: 모바일에서 버튼 정렬이 어긋나요 — 수정 후 다시 올려주세요)"
+                        className="mb-2 h-20 w-full resize-y rounded-[10px] border border-line bg-surface p-3 text-[13px]" />
+                      <div className="flex justify-end gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => review("feedback")} disabled={busy || !feedback.trim()}>피드백 보내고 재개</Button>
+                        <Button variant="primary" size="sm" onClick={() => review("approve")} disabled={busy}>검토 승인 · 완료</Button>
+                      </div>
+                    </div>
+                  )}
+
                   {/* 진행·결과 — 활동 이력 + 연결 이슈 상태 + 매칭 PR */}
                   {insight && (
                     <div className="rounded-[12px] border border-line p-4">
                       <div className="mb-2 flex items-center justify-between">
                         <span className="text-[12px] font-bold uppercase tracking-wide text-text-disabled">진행·결과</span>
-                        <span className="text-[11px] text-text-tertiary">연결 이슈가 닫히면 자동으로 완료 처리돼요</span>
+                        <span className="text-[11px] text-text-tertiary">이슈가 닫히면 검토 대기 — 완료는 사람이 승인해요</span>
                       </div>
                       <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
                         <span className="font-bold text-text-secondary">결과:</span>
@@ -228,7 +252,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                         {insight.activity.length === 0 && <div className="text-[12px] text-text-tertiary">아직 활동 기록이 없어요.</div>}
                         {insight.activity.map((a, i) => (
                           <div key={i} className="flex items-start gap-2 text-[12px]">
-                            <Badge tone={a.kind === "자동 완료" ? "success" : a.kind === "이슈 연결" ? "blue" : a.kind === "생성" ? "purple" : "neutral"}>{a.kind}</Badge>
+                            <Badge tone={a.kind === "완료" ? "success" : a.kind === "검토 대기" ? "purple" : a.kind === "피드백" ? "warning" : a.kind === "이슈 연결" || a.kind === "재개" ? "blue" : a.kind === "생성" ? "purple" : "neutral"}>{a.kind}</Badge>
                             <span className="min-w-0 flex-1 text-text-primary">{a.note}</span>
                             <span className="shrink-0 font-mono text-[11px] text-text-tertiary">{a.at.slice(5, 16).replace("T", " ")}</span>
                           </div>
