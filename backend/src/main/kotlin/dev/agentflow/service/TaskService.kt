@@ -31,7 +31,7 @@ class TaskService(
   private val tasks: TaskRepository,
   private val projects: ProjectRepository,
   private val docs: ProjectDocRepository,
-  private val claude: ClaudeClient,
+  private val llm: LlmService,
   private val gitHub: GitHubService,
   private val activities: TaskActivityRepository,
   private val issues: IssueRepository,
@@ -46,7 +46,7 @@ class TaskService(
   fun generate(projectId: String): List<TaskDto> {
     val project = projects.findById(projectId).orElse(null)
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
-    val agentTasks = parseAgentTasks(claude.complete(TASKS_SYSTEM, taskBrief(project), maxTokens = 8000))
+    val agentTasks = parseAgentTasks(llm.complete(TASKS_SYSTEM, taskBrief(project), maxTokens = 8000))
     val items = agentTasks ?: templateTasks(project)
     val now = Instant.now().toString()
     tasks.findByProjectIdOrderBySeq(projectId).forEach { old ->

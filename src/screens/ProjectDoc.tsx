@@ -133,7 +133,7 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
       ) : !doc ? (
         <EmptyState
           title={`${meta_.name} 문서가 아직 없어요.`}
-          desc={`${meta_.genDesc} 서버에 ANTHROPIC_API_KEY 가 있으면 Claude 가, 없으면 구조화된 템플릿이 초안을 작성해요.`}
+          desc={`${meta_.genDesc} 서버에 ANTHROPIC_API_KEY(또는 OPENAI_API_KEY)가 있으면 에이전트가, 없으면 구조화된 템플릿이 초안을 작성해요.`}
           action={<Button variant="primary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4.5 w-4.5" />}>{busy ? "생성 중…" : `에이전트로 ${meta_.name} 생성`}</Button>}
         />
       ) : (

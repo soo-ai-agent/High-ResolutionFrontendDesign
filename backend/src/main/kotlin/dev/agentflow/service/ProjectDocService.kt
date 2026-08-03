@@ -20,7 +20,7 @@ import java.time.LocalDate
 class ProjectDocService(
   private val docs: ProjectDocRepository,
   private val projects: ProjectRepository,
-  private val claude: ClaudeClient,
+  private val llm: LlmService,
   private val gitHub: GitHubService,
 ) {
   // 문서 타입 레지스트리 — 새 문서 종류는 여기에 spec 하나 추가하면 끝.
@@ -51,7 +51,7 @@ class ProjectDocService(
     // 저장소 코드 수집(URL 또는 org/이름) — 에이전트가 실제 코드를 반영하게 프롬프트에 첨부.
     val code = runCatching { collectCodeContext(project) }.getOrNull()
     val brief = projectBrief(project) + (code?.let { "\n\n[저장소 코드 분석 자료 — 실제 저장소에서 수집됨]\n$it" } ?: "")
-    val content = claude.complete(spec.system, brief, maxTokens = 16000)
+    val content = llm.complete(spec.system, brief, maxTokens = 16000)
     val today = LocalDate.now().toString()
     val e = existing ?: ProjectDocEntity(id = "$projectId:$docType", projectId = projectId, docType = docType, createdDate = today)
     e.title = project.name
@@ -150,7 +150,7 @@ class ProjectDocService(
   // 템플릿 폴백일 때 수집 자료를 문서 끝에 한 섹션으로 붙인다(에이전트 키가 있으면 본문 전체에 반영됨).
   private fun codeAppendix(code: String?): String =
     if (code == null) "" else "\n\n## 저장소 분석 자료 (자동 수집)\n" +
-      "서버가 GitHub API 로 실제 저장소에서 수집한 자료예요. ANTHROPIC_API_KEY 를 연결하면 에이전트가 이 자료를 반영해 문서 전체를 다시 작성할 수 있어요.\n\n" + code
+      "서버가 GitHub API 로 실제 저장소에서 수집한 자료예요. ANTHROPIC_API_KEY(또는 OPENAI_API_KEY)를 연결하면 에이전트가 이 자료를 반영해 문서 전체를 다시 작성할 수 있어요.\n\n" + code
 
   private fun ProjectDocEntity.toDto() =
     ProjectDocDto(projectId, docType, title, client, author, docVersion, createdDate, updatedDate, source, contentMd, updatedAt)

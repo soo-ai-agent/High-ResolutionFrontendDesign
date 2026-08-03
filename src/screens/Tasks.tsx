@@ -135,7 +135,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
       ) : tasks.length === 0 ? (
         <EmptyState
           title="작업 계획이 아직 없어요."
-          desc="PRD·IA 문서를 근거로 에이전트가 작업을 분해해요. 서버에 ANTHROPIC_API_KEY 가 있으면 Claude 가, 없으면 저장소 구성 기반 표준 분해가 초안을 만들어요."
+          desc="PRD·IA 문서를 근거로 에이전트가 작업을 분해해요. 서버에 ANTHROPIC_API_KEY(또는 OPENAI_API_KEY)가 있으면 에이전트가, 없으면 저장소 구성 기반 표준 분해가 초안을 만들어요."
           action={<Button variant="primary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4.5 w-4.5" />}>{busy ? "생성 중…" : "에이전트로 작업 분해"}</Button>}
         />
       ) : (
