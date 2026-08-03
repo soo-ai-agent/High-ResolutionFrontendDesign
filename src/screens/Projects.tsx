@@ -4,7 +4,7 @@ import { PROJECTS, BUILD_PHASES, BUILD_DOMAINS, type ProjectItem } from "../data
 import { listProjects, createProject } from "../lib/projects"
 import { useServerStatus } from "../lib/status"
 
-export default function Projects({ navigate }: { navigate: (r: string) => void }) {
+export default function Projects({ navigate, onOpen }: { navigate: (r: string) => void; onOpen: (p: ProjectItem) => void }) {
   const [adding, setAdding] = useState(false)
   const [serverProjects, setServerProjects] = useState<ProjectItem[]>([])
   const { connected, summary } = useServerStatus()
@@ -89,7 +89,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
         ) : (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {all.map((p) => (
-            <Card key={p.id} hover onClick={() => navigate("pipeline")} className="flex flex-col p-5">
+            <Card key={p.id} hover onClick={() => onOpen(p)} className="flex flex-col p-5">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <Icon name="board" className="h-4.5 w-4.5 text-text-secondary" />
