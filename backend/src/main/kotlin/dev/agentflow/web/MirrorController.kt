@@ -89,6 +89,9 @@ class MirrorController(
   @PostMapping("/projects/{id}/tasks/{taskId}/sync-issue")
   fun syncTaskIssue(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.syncIssue(id, taskId)
 
+  @GetMapping("/projects/{id}/tasks/{taskId}/insight")
+  fun taskInsight(@PathVariable id: String, @PathVariable taskId: String): TaskInsightDto = taskService.insight(id, taskId)
+
   // ---- 프로젝트 문서 (PRD·IA 등) ----
   @GetMapping("/projects/{id}/docs/{type}")
   fun getDoc(@PathVariable id: String, @PathVariable type: String): ProjectDocDto =

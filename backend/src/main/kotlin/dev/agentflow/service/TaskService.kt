@@ -1,13 +1,20 @@
 package dev.agentflow.service
 
+import dev.agentflow.domain.IssueRepository
 import dev.agentflow.domain.ProjectDocRepository
 import dev.agentflow.domain.ProjectEntity
 import dev.agentflow.domain.ProjectRepository
+import dev.agentflow.domain.PullRepository
+import dev.agentflow.domain.TaskActivityEntity
+import dev.agentflow.domain.TaskActivityRepository
 import dev.agentflow.domain.TaskEntity
 import dev.agentflow.domain.TaskRepository
 import dev.agentflow.dto.IssueCreateRequest
+import dev.agentflow.dto.TaskActivityDto
 import dev.agentflow.dto.TaskDto
+import dev.agentflow.dto.TaskInsightDto
 import dev.agentflow.dto.TaskPatchRequest
+import dev.agentflow.dto.TaskPullDto
 import dev.agentflow.util.Json
 import dev.agentflow.util.RepoCoords
 import org.springframework.http.HttpStatus
@@ -25,8 +32,14 @@ class TaskService(
   private val docs: ProjectDocRepository,
   private val claude: ClaudeClient,
   private val gitHub: GitHubService,
+  private val activities: TaskActivityRepository,
+  private val issues: IssueRepository,
+  private val pulls: PullRepository,
 ) {
-  fun list(projectId: String): List<TaskDto> = tasks.findByProjectIdOrderBySeq(projectId).map { it.toDto() }
+  fun list(projectId: String): List<TaskDto> {
+    val project = projects.findById(projectId).orElse(null) ?: return emptyList()
+    return tasks.findByProjectIdOrderBySeq(projectId).map { reconcile(project, it).toDto() }
+  }
 
   // 문서를 근거로 작업 분해. 기존 작업(이슈 연결 포함)은 새 계획으로 대체된다.
   fun generate(projectId: String): List<TaskDto> {
@@ -35,7 +48,10 @@ class TaskService(
     val agentTasks = parseAgentTasks(claude.complete(TASKS_SYSTEM, taskBrief(project), maxTokens = 8000))
     val items = agentTasks ?: templateTasks(project)
     val now = Instant.now().toString()
-    tasks.deleteAll(tasks.findByProjectIdOrderBySeq(projectId))
+    tasks.findByProjectIdOrderBySeq(projectId).forEach { old ->
+      activities.deleteAll(activities.findByTaskIdOrderBySeqDesc(old.id))
+      tasks.delete(old)
+    }
     val saved = items.mapIndexed { i, t ->
       t.id = "$projectId:${i + 1}"
       t.projectId = projectId
@@ -43,7 +59,9 @@ class TaskService(
       if (t.code.isBlank()) t.code = "T-%03d".format(i + 1)
       t.source = if (agentTasks != null) "agent" else "template"
       t.updatedAt = now
-      tasks.save(t)
+      val savedTask = tasks.save(t)
+      record(savedTask.id, "생성", if (agentTasks != null) "에이전트가 문서(PRD·IA)에서 분해" else "저장소 구성 기반 템플릿 분해")
+      savedTask
     }
     return saved.map { it.toDto() }
   }
@@ -51,21 +69,32 @@ class TaskService(
   // 관리자 수정 — 넘어온 필드만 반영, 출처는 human 으로.
   fun patch(projectId: String, taskId: String, req: TaskPatchRequest): TaskDto {
     val t = find(projectId, taskId)
-    req.title?.takeIf { it.isNotBlank() }?.let { t.title = it }
-    req.detail?.let { t.detail = it }
-    req.domain?.let { t.domain = it }
-    req.phase?.let { t.phase = it }
-    req.repo?.let { t.repo = it }
-    req.owner?.let { t.owner = it }
-    req.priority?.let { t.priority = it }
-    req.estimate?.let { t.estimate = it }
-    req.status?.let { t.status = it }
-    t.source = "human"
-    t.updatedAt = Instant.now().toString()
+    val changes = mutableListOf<String>()
+    fun <V> apply(label: String, new: V?, cur: V, set: (V) -> Unit) {
+      if (new != null && new != cur) { changes += "$label: $cur → $new"; set(new) }
+    }
+    req.title?.takeIf { it.isNotBlank() }?.let { if (it != t.title) { changes += "제목 수정"; t.title = it } }
+    req.detail?.let { if (it != t.detail) { changes += "상세 수정"; t.detail = it } }
+    apply("도메인", req.domain, t.domain) { t.domain = it }
+    apply("단계", req.phase, t.phase) { t.phase = it }
+    apply("저장소", req.repo, t.repo) { t.repo = it }
+    apply("담당", req.owner, t.owner) { t.owner = it }
+    apply("우선순위", req.priority, t.priority) { t.priority = it }
+    apply("추정", req.estimate, t.estimate) { t.estimate = it }
+    apply("상태", req.status, t.status) { t.status = it }
+    if (changes.isNotEmpty()) {
+      t.source = "human"
+      t.updatedAt = Instant.now().toString()
+      record(t.id, "수정", changes.joinToString(" · "))
+    }
     return tasks.save(t).toDto()
   }
 
-  fun delete(projectId: String, taskId: String) = tasks.delete(find(projectId, taskId))
+  fun delete(projectId: String, taskId: String) {
+    val t = find(projectId, taskId)
+    activities.deleteAll(activities.findByTaskIdOrderBySeqDesc(t.id))
+    tasks.delete(t)
+  }
 
   // 태스크 → GitHub 이슈 생성(동기화). PAT 연결 필요. 담당 저장소 좌표는 URL 우선.
   fun syncIssue(projectId: String, taskId: String): TaskDto {
@@ -89,7 +118,61 @@ class TaskService(
     t.issueNumber = created.number
     t.issueUrl = created.html_url
     t.updatedAt = Instant.now().toString()
+    record(t.id, "이슈 연결", "GitHub 이슈 #${created.number} 생성·연결")
     return tasks.save(t).toDto()
+  }
+
+  // 진행·결과 조회 — 활동 이력 + 미러의 연결 이슈 상태 + 코드([T-00x])로 매칭되는 PR.
+  fun insight(projectId: String, taskId: String): TaskInsightDto {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    val t = reconcile(project, find(projectId, taskId))
+    val full = fullRepoOf(project, t.repo)
+    val issueState = t.issueNumber?.let { n -> full?.let { issues.findByRepoAndNumber(it, n)?.state } }
+    val prs = full?.let { f ->
+      pulls.findByRepo(f).filter { it.title?.contains("[${t.code}]") == true }
+        .map { TaskPullDto(it.number, it.title ?: "", it.state, it.merged, it.htmlUrl) }
+    } ?: emptyList()
+    val acts = activities.findByTaskIdOrderBySeqDesc(t.id).map { TaskActivityDto(it.at, it.kind, it.note) }
+    return TaskInsightDto(acts, issueState, prs)
+  }
+
+  // 미러와 동기화: 이슈 미연결이면 제목 접두([T-00x])로 자동 연결, 연결 이슈가 닫히면 자동 완료.
+  private fun reconcile(project: ProjectEntity, t: TaskEntity): TaskEntity {
+    val full = fullRepoOf(project, t.repo) ?: return t
+    var dirty = false
+    if (t.issueNumber == null) {
+      issues.findByRepo(full).firstOrNull { it.title?.startsWith("[${t.code}]") == true }?.let { m ->
+        t.issueNumber = m.number
+        t.issueUrl = m.htmlUrl
+        record(t.id, "이슈 연결", "미러에서 이슈 #${m.number} 자동 연결 (제목 매칭)")
+        dirty = true
+      }
+    }
+    val n = t.issueNumber
+    if (n != null && t.status != "완료") {
+      val issue = issues.findByRepoAndNumber(full, n)
+      if (issue?.state == "closed") {
+        t.status = "완료"
+        record(t.id, "자동 완료", "연결 이슈 #$n 닫힘 → 완료 처리")
+        dirty = true
+      }
+    }
+    if (dirty) {
+      t.updatedAt = Instant.now().toString()
+      tasks.save(t)
+    }
+    return t
+  }
+
+  private fun fullRepoOf(project: ProjectEntity, repoName: String): String? {
+    val r = project.repos.firstOrNull { it.name == repoName } ?: return null
+    val (owner, name) = RepoCoords.of(project.org, r)
+    return "$owner/$name"
+  }
+
+  private fun record(taskId: String, kind: String, note: String) {
+    activities.save(TaskActivityEntity(taskId = taskId, at = Instant.now().toString(), kind = kind, note = note))
   }
 
   private fun find(projectId: String, taskId: String): TaskEntity {

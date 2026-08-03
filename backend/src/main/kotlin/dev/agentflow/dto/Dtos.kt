@@ -71,6 +71,15 @@ data class TaskPatchRequest(
   val status: String? = null,
 )
 
+// ---- 태스크 진행·결과 (활동 로그 + 연결 이슈·PR) ----
+data class TaskActivityDto(val at: String, val kind: String, val note: String)
+data class TaskPullDto(val number: Long, val title: String, val state: String?, val merged: Boolean, val url: String?)
+data class TaskInsightDto(
+  val activity: List<TaskActivityDto>,
+  val issueState: String?, // 연결 이슈의 미러 상태 (open/closed, 미러에 없으면 null)
+  val pulls: List<TaskPullDto>,
+)
+
 // ---- GitHub 프록시 요청 ----
 data class ConnectRequest(val token: String?)
 data class IssueCreateRequest(val owner: String?, val repo: String?, val title: String?, val body: String?, val labels: List<String>?)

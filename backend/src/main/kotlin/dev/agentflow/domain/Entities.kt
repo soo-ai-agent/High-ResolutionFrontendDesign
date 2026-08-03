@@ -154,3 +154,13 @@ class TaskEntity(
   var source: String = "template", // agent | template | human
   var updatedAt: String = "",
 )
+
+// 태스크 활동 로그 — 생성·수정·이슈 연결·자동 완료 등 진행 이력을 시간순으로 남겨요.
+@Entity
+class TaskActivityEntity(
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var seq: Long = 0,
+  var taskId: String = "",
+  var at: String = "",
+  var kind: String = "", // 생성/수정/이슈 연결/자동 완료 ...
+  @Column(length = 1000) var note: String = "",
+)

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, EmptyState, RoleChip } from "../components/ui"
 import { BUILD_PHASES, type ProjectItem } from "../data"
-import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, type Task, type TaskPatch } from "../lib/tasks"
+import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, getTaskInsight, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
 
 const STATUS_TONE: Record<string, "success" | "blue" | "warning"> = { "완료": "success", "진행 중": "blue", "대기": "warning" }
 const OWNERS: Task["owner"][] = ["ai", "human", "auto"]
@@ -16,6 +16,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
   const [error, setError] = useState("")
   const [selId, setSelId] = useState<string | null>(null)
   const [draft, setDraft] = useState<TaskPatch>({})
+  const [insight, setInsight] = useState<TaskInsight | null>(null)
 
   const sel = tasks.find((t) => t.id === selId) ?? null
 
@@ -38,6 +39,20 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
   useEffect(() => {
     if (sel) setDraft({ title: sel.title, detail: sel.detail, phase: sel.phase, repo: sel.repo, owner: sel.owner, priority: sel.priority, estimate: sel.estimate, status: sel.status })
   }, [selId, tasks]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 선택한 태스크의 진행·결과 조회 — 조회 중 미러 동기화(자동 연결·자동 완료)가 반영될 수 있어 목록도 갱신
+  useEffect(() => {
+    if (!project || !selId) { setInsight(null); return }
+    let alive = true
+    getTaskInsight(project.id, selId)
+      .then((ins) => {
+        if (!alive) return
+        setInsight(ins)
+        return listTasks(project.id).then((ts) => { if (alive) setTasks(ts) })
+      })
+      .catch(() => { if (alive) setInsight(null) })
+    return () => { alive = false }
+  }, [project, selId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const groups = useMemo(() => {
     const order = [...BUILD_PHASES, "기타"]
@@ -182,6 +197,45 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                     <Select label="추정" value={draft.estimate ?? "M"} onChange={(v) => setDraft({ ...draft, estimate: v })} options={ESTIMATES} />
                     <Select label="상태" value={draft.status ?? "대기"} onChange={(v) => setDraft({ ...draft, status: v })} options={STATUSES} />
                   </div>
+
+                  {/* 진행·결과 — 활동 이력 + 연결 이슈 상태 + 매칭 PR */}
+                  {insight && (
+                    <div className="rounded-[12px] border border-line p-4">
+                      <div className="mb-2 flex items-center justify-between">
+                        <span className="text-[12px] font-bold uppercase tracking-wide text-text-disabled">진행·결과</span>
+                        <span className="text-[11px] text-text-tertiary">연결 이슈가 닫히면 자동으로 완료 처리돼요</span>
+                      </div>
+                      <div className="mb-3 flex flex-wrap items-center gap-2 text-[12px]">
+                        <span className="font-bold text-text-secondary">결과:</span>
+                        {sel.issueNumber != null ? (
+                          <span className="flex items-center gap-1.5">
+                            <Icon name="github" className="h-3.5 w-3.5 text-text-secondary" />
+                            {sel.issueUrl ? <a href={sel.issueUrl} target="_blank" rel="noreferrer" className="font-mono font-bold text-blue hover:underline">#{sel.issueNumber}</a> : <span className="font-mono font-bold">#{sel.issueNumber}</span>}
+                            <Badge tone={insight.issueState === "closed" ? "success" : "blue"}>{insight.issueState === "closed" ? "이슈 닫힘" : insight.issueState === "open" ? "이슈 열림" : "미러 대기"}</Badge>
+                          </span>
+                        ) : (
+                          <span className="text-text-tertiary">연결된 이슈 없음</span>
+                        )}
+                        {insight.pulls.map((p) => (
+                          <span key={p.number} className="flex items-center gap-1">
+                            <Icon name="pr" className="h-3.5 w-3.5 text-text-secondary" />
+                            {p.url ? <a href={p.url} target="_blank" rel="noreferrer" className="font-mono font-bold text-blue hover:underline">PR #{p.number}</a> : <span className="font-mono font-bold">PR #{p.number}</span>}
+                            <Badge tone={p.merged ? "purple" : p.state === "open" ? "blue" : "neutral"}>{p.merged ? "머지됨" : p.state === "open" ? "열림" : "닫힘"}</Badge>
+                          </span>
+                        ))}
+                      </div>
+                      <div className="space-y-1.5">
+                        {insight.activity.length === 0 && <div className="text-[12px] text-text-tertiary">아직 활동 기록이 없어요.</div>}
+                        {insight.activity.map((a, i) => (
+                          <div key={i} className="flex items-start gap-2 text-[12px]">
+                            <Badge tone={a.kind === "자동 완료" ? "success" : a.kind === "이슈 연결" ? "blue" : a.kind === "생성" ? "purple" : "neutral"}>{a.kind}</Badge>
+                            <span className="min-w-0 flex-1 text-text-primary">{a.note}</span>
+                            <span className="shrink-0 font-mono text-[11px] text-text-tertiary">{a.at.slice(5, 16).replace("T", " ")}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* GitHub 이슈 동기화 */}
                   <div className="rounded-[12px] bg-surface-2 p-4">

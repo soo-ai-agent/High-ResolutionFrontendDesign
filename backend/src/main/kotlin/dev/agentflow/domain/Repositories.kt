@@ -37,3 +37,8 @@ interface ProjectDocRepository : JpaRepository<ProjectDocEntity, String> {
 interface TaskRepository : JpaRepository<TaskEntity, String> {
   fun findByProjectIdOrderBySeq(projectId: String): List<TaskEntity>
 }
+
+interface TaskActivityRepository : JpaRepository<TaskActivityEntity, Long> {
+  fun findByTaskIdOrderBySeqDesc(taskId: String): List<TaskActivityEntity>
+  fun deleteByTaskId(taskId: String)
+}
