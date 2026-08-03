@@ -1,11 +1,13 @@
 import { useState, useEffect, useMemo } from "react"
-import { Icon, IconButton, Button, Badge, Card, SummaryCard, SectionTitle, SearchField, Progress, Toggle, RoleChip } from "../components/ui"
+import { Icon, IconButton, Button, Badge, Card, SummaryCard, SectionTitle, SearchField, Progress, Toggle, RoleChip, EmptyState } from "../components/ui"
 import { PROJECTS, BUILD_PHASES, BUILD_DOMAINS, type ProjectItem } from "../data"
 import { listProjects, createProject } from "../lib/projects"
+import { useServerStatus } from "../lib/status"
 
 export default function Projects({ navigate }: { navigate: (r: string) => void }) {
   const [adding, setAdding] = useState(false)
   const [serverProjects, setServerProjects] = useState<ProjectItem[]>([])
+  const { connected, summary } = useServerStatus()
 
   const load = async () => {
     try {
@@ -39,10 +41,17 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
           <span className="text-[17px] font-bold tracking-tight">Agent Flow</span>
         </div>
         <div className="ml-auto flex items-center gap-3">
-          <div className="flex items-center gap-1.5 rounded-full bg-success-light px-3 py-1.5">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            <span className="text-[12px] font-semibold text-success">GitHub 동기화됨</span>
-          </div>
+          {connected ? (
+            <div className="flex items-center gap-1.5 rounded-full bg-success-light px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-success" />
+              <span className="text-[12px] font-semibold text-success">GitHub 연결됨</span>
+            </div>
+          ) : (
+            <button onClick={() => navigate("settings")} className="flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 hover:brightness-95" title="설정에서 GitHub 연결">
+              <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+              <span className="text-[12px] font-semibold text-[#b47908]">GitHub 연결 필요</span>
+            </button>
+          )}
           <IconButton label="알림"><Icon name="bell" /></IconButton>
           <IconButton label="도움말"><Icon name="help" /></IconButton>
           <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white">SB</button>
@@ -59,7 +68,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
         <div className="mt-6 grid grid-cols-2 gap-4 md:grid-cols-4">
           <SummaryCard label="전체 프로젝트" value={String(all.length)} sub={`진행 중 ${active}`} />
           <SummaryCard label="연결된 저장소" value={String(repoTotal)} sub="프로젝트 하위" tone="blue" />
-          <SummaryCard label="실행 중인 Actions" value="2" sub="Backend · Repair" tone="purple" />
+          <SummaryCard label="실행 중인 Actions" value={String(summary?.activeRuns ?? 0)} sub="미러 기준" tone="purple" />
           <SummaryCard label="실패한 Workflow" value={String(failing)} sub="즉시 확인 필요" tone="error" />
         </div>
 
@@ -69,6 +78,15 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
           <FilterChip label="최근 업데이트 순" />
         </div>
 
+        {all.length === 0 ? (
+          <div className="mt-4">
+            <EmptyState
+              title="아직 프로젝트가 없어요."
+              desc="프로젝트를 추가하면 여러 깃 저장소를 묶어 기획부터 배포까지 진행할 수 있어요. GitHub를 연결하면 이슈·PR·Actions가 미러에 실시간으로 채워져요."
+              action={<Button variant="primary" icon={<Icon name="plus" className="h-4.5 w-4.5" />} onClick={() => setAdding(true)}>프로젝트 추가</Button>}
+            />
+          </div>
+        ) : (
         <div className="mt-4 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           {all.map((p) => (
             <Card key={p.id} hover onClick={() => navigate("pipeline")} className="flex flex-col p-5">
@@ -118,6 +136,7 @@ export default function Projects({ navigate }: { navigate: (r: string) => void }
             </Card>
           ))}
         </div>
+        )}
       </div>
       {adding && <AddProjectModal onClose={() => setAdding(false)} onCreate={async (p) => { await createProject(p); await load() }} />}
     </div>

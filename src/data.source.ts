@@ -46,60 +46,9 @@ export type ProjectItem = {
   synced: boolean
 }
 
-export const PROJECTS: ProjectItem[] = [
-  {
-    id: "P-01",
-    name: "커머스 어드민 리뉴얼",
-    org: "sample-org",
-    desc: "회원·콘텐츠 관리를 아우르는 관리자 도구를 프론트·백엔드·인프라 저장소로 나눠 개발하는 프로젝트",
-    stage: "구현",
-    progress: 62,
-    repos: [
-      { name: "admin-web", purpose: "프론트엔드" },
-      { name: "admin-api", purpose: "백엔드" },
-      { name: "admin-infra", purpose: "인프라" },
-    ],
-    tasks: 23, prs: 6, fails: 1, updated: "3분 전", synced: true,
-  },
-  {
-    id: "P-02",
-    name: "결제 플랫폼 고도화",
-    org: "sample-org",
-    desc: "결제 코어와 결제 웹을 분리해 안정성과 확장성을 높이는 프로젝트",
-    stage: "검증",
-    progress: 82,
-    repos: [
-      { name: "payments-core", purpose: "백엔드" },
-      { name: "payments-web", purpose: "프론트엔드" },
-    ],
-    tasks: 8, prs: 2, fails: 0, updated: "1시간 전", synced: true,
-  },
-  {
-    id: "P-03",
-    name: "알림 서비스 신규 구축",
-    org: "sample-org",
-    desc: "이메일·푸시·인앱 알림을 통합 관리하는 신규 서비스",
-    stage: "작업 생성",
-    progress: 34,
-    repos: [
-      { name: "notify-service", purpose: "백엔드" },
-      { name: "notify-web", purpose: "프론트엔드" },
-    ],
-    tasks: 21, prs: 1, fails: 2, updated: "2일 전", synced: false,
-  },
-  {
-    id: "P-04",
-    name: "디자인 시스템 배포",
-    org: "sample-org",
-    desc: "공용 디자인 토큰과 컴포넌트를 패키지로 배포하는 프로젝트",
-    stage: "릴리스",
-    progress: 100,
-    repos: [
-      { name: "design-tokens", purpose: "공용 패키지" },
-    ],
-    tasks: 0, prs: 0, fails: 0, updated: "어제", synced: true,
-  },
-]
+// 데모 시드 비움 — 프로젝트는 서버(/api/mirror/projects)에서만 채워져요.
+// 화면은 비어 있으면 '프로젝트 추가' 안내(EmptyState)를 보여줘요.
+export const PROJECTS: ProjectItem[] = []
 
 // ===== 휴먼태스크 (사람 전용 작업) =====
 // AI가 대신할 수 없는 외부 계정·키 발급, 서비스 등록, 배포 승인만 따로 모아요.
@@ -118,77 +67,9 @@ export type HumanTask = {
   blocks: string
 }
 
-export const HUMAN_TASKS: HumanTask[] = [
-  {
-    id: "T-056", domain: "auth", title: "카카오 OAuth 등록", phase: "외부 키 발급", status: "대기",
-    purpose: "카카오 로그인을 위해 REST API 키와 Client Secret을 발급받아 등록해요.",
-    keys: [
-      { name: "KAKAO_REST_API_KEY", desc: "카카오 디벨로퍼스 앱 REST API 키", site: "https://developers.kakao.com", docs: "https://developers.kakao.com/docs", state: "미등록" },
-      { name: "KAKAO_CLIENT_SECRET", desc: "카카오 로그인 Client Secret (보안 강화 시)", site: "https://developers.kakao.com", state: "미등록" },
-    ],
-    manual: "카카오 디벨로퍼스 앱 생성 후 REST API 키 발급 + Redirect URI 설정, platform 등록. KAKAO_REST_API_KEY / KAKAO_CLIENT_SECRET 입력.",
-    checklist: [
-      { text: "카카오 디벨로퍼스 앱 생성", done: false },
-      { text: "platform(Web) 등록 및 Redirect URI 설정", done: false },
-      { text: "REST API 키 · Client Secret 입력", done: false },
-    ],
-    blocks: "T-030 카카오 세션 처리, 로그인 플로우",
-  },
-  {
-    id: "T-052", domain: "vehicles", title: "CODEF API 키 발급", phase: "외부 키 발급", status: "대기",
-    purpose: "차량 정보 조회를 위한 CODEF API 키를 발급받아요.",
-    keys: [
-      { name: "CODEF_CLIENT_ID", desc: "CODEF OAuth Client ID", site: "https://codef.io", docs: "https://developer.codef.io", state: "미등록" },
-      { name: "CODEF_CLIENT_SECRET", desc: "CODEF OAuth Client Secret", site: "https://codef.io", state: "미등록" },
-    ],
-    manual: "CODEF 콘솔에서 서비스 신청 후 클라이언트 정보 발급.",
-    checklist: [{ text: "CODEF 계정 생성", done: false }, { text: "서비스 신청·승인", done: false }, { text: "클라이언트 정보 입력", done: false }],
-    blocks: "차량 정보 조회 API",
-  },
-  {
-    id: "T-053", domain: "matching", title: "네이버 지도 API 등록", phase: "외부 키 발급", status: "대기",
-    purpose: "차량 위치·매칭을 위한 네이버 지도 API를 등록해요.",
-    keys: [{ name: "NCP_MAPS_CLIENT_ID", desc: "네이버 클라우드 Maps Client ID", site: "https://console.ncloud.com", state: "미등록" }],
-    manual: "NCP 콘솔에서 Maps 이용 신청 후 Client ID 발급, 서비스 URL 등록.",
-    checklist: [{ text: "Maps 이용 신청", done: false }, { text: "서비스 URL 등록", done: false }, { text: "Client ID 입력", done: false }],
-    blocks: "지도·매칭 기능",
-  },
-  {
-    id: "T-054", domain: "notification", title: "NCP SENS 키 발급", phase: "외부 키 발급", status: "대기",
-    purpose: "알림(SMS·알림톡) 발송을 위한 NCP SENS 키를 발급해요.",
-    keys: [
-      { name: "NCP_SENS_ACCESS_KEY", desc: "NCP SENS Access Key", site: "https://console.ncloud.com", state: "미등록" },
-      { name: "NCP_SENS_SECRET_KEY", desc: "NCP SENS Secret Key", site: "https://console.ncloud.com", state: "미등록" },
-    ],
-    manual: "NCP SENS 프로젝트 생성 후 인증키 발급, 발신번호 등록.",
-    checklist: [{ text: "SENS 프로젝트 생성", done: false }, { text: "발신번호 등록", done: false }, { text: "인증키 입력", done: false }],
-    blocks: "알림 발송",
-  },
-  {
-    id: "T-055", domain: "vehicles", title: "NCP OCR API 키 발급", phase: "외부 키 발급", status: "대기",
-    purpose: "차량 서류 OCR을 위한 NCP CLOVA OCR 키를 발급해요.",
-    keys: [{ name: "NCP_OCR_SECRET", desc: "NCP CLOVA OCR Secret", site: "https://console.ncloud.com", state: "미등록" }],
-    manual: "CLOVA OCR 도메인 생성 후 Secret 발급.",
-    checklist: [{ text: "OCR 도메인 생성", done: false }, { text: "Secret 입력", done: false }],
-    blocks: "서류 검수 자동화",
-  },
-  {
-    id: "T-057", domain: "infra", title: "Vercel 등록", phase: "외부 키 발급", status: "진행 중",
-    purpose: "프론트엔드 배포를 위한 Vercel 프로젝트를 연결해요.",
-    keys: [{ name: "VERCEL_TOKEN", desc: "Vercel 배포 토큰", site: "https://vercel.com/account/tokens", state: "등록됨" }],
-    manual: "Vercel 프로젝트 생성 후 GitHub 연결, 배포 토큰 발급.",
-    checklist: [{ text: "Vercel 프로젝트 생성", done: true }, { text: "GitHub 저장소 연결", done: true }, { text: "배포 토큰 입력", done: false }],
-    blocks: "프론트엔드 배포",
-  },
-  {
-    id: "T-065", domain: "release", title: "production 배포 승인", phase: "릴리즈", status: "대기",
-    purpose: "최종 산출물을 production에 배포하도록 사람이 최종 승인해요.",
-    keys: [],
-    manual: "필수 Check 통과 확인 후 production 배포를 승인.",
-    checklist: [{ text: "필수 Check 통과 확인", done: false }, { text: "배포 승인", done: false }],
-    blocks: "릴리스 생성",
-  },
-]
+// 데모 시드 비움 — 휴먼태스크는 실제 작업 분해가 연결되면 채워져요.
+// 비어 있으면 화면은 EmptyState 를 보여줘요.
+export const HUMAN_TASKS: HumanTask[] = []
 
 // ===== 빌드 보드 (단계 × 도메인) =====
 // 스키마 → 프론트엔드 → 백엔드 → 외부 키 발급 → QA → 릴리즈 순으로 빌드해요.

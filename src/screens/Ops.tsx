@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Icon, Button, Badge, Card, SectionTitle, Row, RoleChip } from "../components/ui"
+import { Icon, Button, Badge, Card, SectionTitle, Row, RoleChip, EmptyState } from "../components/ui"
 import { HUMAN_TASKS, type HumanTask, type ExternalKey } from "../data"
 
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
@@ -175,7 +175,7 @@ function Field({ title, children }: { title: string; children: React.ReactNode }
 // ============ HUMAN TASKS (사람 전용 작업) ============
 export function HumanTasks() {
   const [tasks, setTasks] = useState<HumanTask[]>(HUMAN_TASKS)
-  const [selId, setSelId] = useState(HUMAN_TASKS[0].id)
+  const [selId, setSelId] = useState(HUMAN_TASKS[0]?.id ?? "")
   const sel = tasks.find((t) => t.id === selId) ?? tasks[0]
 
   const waiting = tasks.filter((t) => t.status === "대기").length
@@ -189,6 +189,16 @@ export function HumanTasks() {
   const markDone = () => patchSel({ status: "완료" })
 
   const statusTone = (s: string) => (s === "완료" ? "success" : s === "진행 중" ? "blue" : "warning")
+
+  if (tasks.length === 0) {
+    return (
+      <div className="space-y-6">
+        <SectionTitle title="휴먼태스크" desc="AI가 대신할 수 없는 외부 계정·키 발급, 서비스 등록, 배포 승인만 모았어요."
+          action={<span className="flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 text-[12px] font-bold text-[#b47908]"><Icon name="hand" className="h-3.5 w-3.5" />사람 전용 작업</span>} />
+        <EmptyState title="휴먼태스크가 없어요." desc="사람만 할 수 있는 외부 키 발급·서비스 등록·배포 승인이 생기면 여기에 모여요. 스키마·프론트·백엔드·QA 등 나머지는 AI·자동화가 알아서 진행해요." />
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
