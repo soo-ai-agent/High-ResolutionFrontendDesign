@@ -29,3 +29,5 @@ interface EventRepository : JpaRepository<EventEntity, Long> {
 interface ProjectRepository : JpaRepository<ProjectEntity, String>
 
 interface MetaRepository : JpaRepository<MetaEntity, String>
+
+interface PrdRepository : JpaRepository<PrdEntity, String>

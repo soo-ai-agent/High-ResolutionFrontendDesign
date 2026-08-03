@@ -113,3 +113,19 @@ class MetaEntity(
   @Id var id: String = "meta",
   var updatedAt: String? = null,
 )
+
+// 프로젝트별 PRD — 프로젝트 생성 시 에이전트(키 없으면 템플릿)가 초안을 만들고,
+// 관리자가 화면에서 수정. source 로 초안 출처(agent/template/human)를 구분.
+@Entity
+class PrdEntity(
+  @Id var projectId: String = "",
+  @Column(length = 512) var title: String = "",
+  var client: String = "",
+  var author: String = "",
+  var docVersion: String = "v1.0",
+  var createdDate: String = "",
+  var updatedDate: String = "",
+  var source: String = "template",
+  @Column(length = 100000) var contentMd: String = "",
+  var updatedAt: String = "",
+)

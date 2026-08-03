@@ -10,6 +10,9 @@ const MENU = [
   { group: "흐름", items: [
     { key: "pipeline", label: "진행 흐름", icon: "handoff" },
   ] },
+  { group: "기획", items: [
+    { key: "prd", label: "PRD", icon: "doc" },
+  ] },
   { group: "개발", items: [
     { key: "mirror", label: "GitHub 미러", icon: "sync" },
     { key: "projects-board", label: "Projects 보드", icon: "board" },

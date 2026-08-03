@@ -6,11 +6,13 @@ import Pipeline from "./screens/Pipeline"
 import Mirror from "./screens/Mirror"
 import Board from "./screens/Board"
 import { HumanTasks, Settings } from "./screens/Ops"
+import PrdScreen from "./screens/Prd"
 import type { ProjectItem } from "./data"
 
 // MVP 6화면: 로그인 · 프로젝트 · 진행 흐름 · GitHub 미러 · Projects 보드 · 휴먼태스크 · 설정(연동)
-const SCREENS: Record<string, (nav: (r: string) => void) => ReactElement> = {
+const SCREENS: Record<string, (nav: (r: string) => void, project: ProjectItem | null) => ReactElement> = {
   pipeline: (nav) => <Pipeline navigate={nav} />,
+  prd: (_nav, project) => <PrdScreen project={project} />,
   mirror: (nav) => <Mirror navigate={nav} />,
   "projects-board": () => <Board />,
   "human-tasks": () => <HumanTasks />,
@@ -34,7 +36,7 @@ export default function App() {
   const render = SCREENS[route] ?? SCREENS.pipeline
   return (
     <Layout route={route} navigate={navigate} project={project}>
-      <div key={route} className="af-fade">{render(navigate)}</div>
+      <div key={route} className="af-fade">{render(navigate, project)}</div>
     </Layout>
   )
 }

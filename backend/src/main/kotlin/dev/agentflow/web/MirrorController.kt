@@ -2,6 +2,7 @@ package dev.agentflow.web
 
 import dev.agentflow.dto.*
 import dev.agentflow.service.MirrorService
+import dev.agentflow.service.PrdService
 import dev.agentflow.service.ProjectService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -13,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException
 class MirrorController(
   private val mirror: MirrorService,
   private val projects: ProjectService,
+  private val prd: PrdService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -56,6 +58,20 @@ class MirrorController(
   fun createProject(@RequestBody dto: ProjectDto): ResponseEntity<ProjectDto> {
     if (dto.id.isBlank() || dto.name.isBlank())
       throw ResponseStatusException(HttpStatus.BAD_REQUEST, "id·name 이 필요해요.")
-    return ResponseEntity.status(HttpStatus.CREATED).body(projects.create(dto))
+    val created = projects.create(dto)
+    // PRD 초안은 백그라운드로 — 에이전트 호출이 길어도 생성 응답을 막지 않는다.
+    Thread.startVirtualThread { runCatching { prd.generate(created.id) } }
+    return ResponseEntity.status(HttpStatus.CREATED).body(created)
   }
+
+  // ---- PRD (프로젝트별 기획 문서) ----
+  @GetMapping("/projects/{id}/prd")
+  fun getPrd(@PathVariable id: String): PrdDto =
+    prd.get(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "PRD 가 아직 없어요.")
+
+  @PostMapping("/projects/{id}/prd/generate")
+  fun generatePrd(@PathVariable id: String): PrdDto = prd.generate(id)
+
+  @PutMapping("/projects/{id}/prd")
+  fun updatePrd(@PathVariable id: String, @RequestBody req: PrdUpdateRequest): PrdDto = prd.update(id, req)
 }
