@@ -7,7 +7,7 @@ data class GHUser(val login: String, val name: String?, val avatar_url: String?)
 data class StatusResponse(val connected: Boolean, val user: GHUser?)
 
 // ---- 프로젝트 (어드민 소유) ----
-data class ProjectRepo(val name: String = "", val purpose: String = "")
+data class ProjectRepo(val name: String = "", val purpose: String = "", val url: String = "")
 data class ProjectDto(
   val id: String,
   val name: String,

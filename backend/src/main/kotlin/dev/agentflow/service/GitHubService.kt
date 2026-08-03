@@ -133,6 +133,34 @@ class GitHubService(
     return mirror.applyBackfill(full, include, issuesData, pullsData, runsData)
   }
 
+  // ---- 저장소 읽기 (문서 생성용 분석) ----
+  // 우선순위: 화면에서 연결한 PAT → 서버 환경변수 GITHUB_TOKEN → 무인증(공개 저장소만).
+  // 실패는 조용히 null/빈 목록 — 분석은 부가 기능이라 문서 생성을 막지 않는다.
+  private val envToken: String? = System.getenv("GITHUB_TOKEN")?.takeIf { it.isNotBlank() }
+
+  private fun readHeaders(accept: String = "application/vnd.github+json"): (HttpHeaders) -> Unit = { h ->
+    (tokenStore.token ?: envToken)?.let { h.set("Authorization", "Bearer $it") }
+    h.set("Accept", accept)
+    h.set("X-GitHub-Api-Version", "2022-11-28")
+  }
+
+  fun repoMeta(owner: String, repo: String): JsonNode? = runCatching {
+    client.get().uri("/repos/{o}/{r}", owner, repo).headers(readHeaders()).retrieve().body(JsonNode::class.java)
+  }.getOrNull()
+
+  fun readme(owner: String, repo: String): String? = runCatching {
+    client.get().uri("/repos/{o}/{r}/readme", owner, repo).headers(readHeaders("application/vnd.github.raw+json")).retrieve().body(String::class.java)
+  }.getOrNull()
+
+  fun treePaths(owner: String, repo: String, branch: String): List<String> = runCatching {
+    val j = client.get().uri("/repos/{o}/{r}/git/trees/{b}?recursive=1", owner, repo, branch).headers(readHeaders()).retrieve().body(JsonNode::class.java)
+    j?.path("tree")?.mapNotNull { it.path("path").asText(null) } ?: emptyList()
+  }.getOrElse { emptyList() }
+
+  fun fileText(owner: String, repo: String, path: String): String? = runCatching {
+    client.get().uri("/repos/{o}/{r}/contents/{p}", owner, repo, path).headers(readHeaders("application/vnd.github.raw+json")).retrieve().body(String::class.java)
+  }.getOrNull()
+
   private fun mapHook(h: JsonNode) = GHHook(
     id = h.path("id").asLong(),
     active = h.path("active").asBoolean(false),

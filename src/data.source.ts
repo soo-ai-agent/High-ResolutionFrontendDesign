@@ -30,7 +30,7 @@ export const PROJECT_REPOS = [
 
 // 최상위 분류는 '프로젝트'예요. 하나의 프로젝트가 여러 깃 저장소를 묶어요.
 // (진입 화면은 저장소가 아니라 이 프로젝트 목록을 보여줘요.)
-export type ProjectRepo = { name: string; purpose: string }
+export type ProjectRepo = { name: string; purpose: string; url?: string }
 export type ProjectItem = {
   id: string
   name: string

@@ -6,6 +6,7 @@ import dev.agentflow.domain.ProjectEntity
 import dev.agentflow.domain.ProjectRepository
 import dev.agentflow.dto.DocUpdateRequest
 import dev.agentflow.dto.ProjectDocDto
+import dev.agentflow.dto.ProjectRepo
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -19,6 +20,7 @@ class ProjectDocService(
   private val docs: ProjectDocRepository,
   private val projects: ProjectRepository,
   private val claude: ClaudeClient,
+  private val gitHub: GitHubService,
 ) {
   // 문서 타입 레지스트리 — 새 문서 종류는 여기에 spec 하나 추가하면 끝.
   private data class DocSpec(
@@ -45,7 +47,10 @@ class ProjectDocService(
     val project = projects.findById(projectId).orElse(null)
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
     val existing = docs.findByProjectIdAndDocType(projectId, docType)
-    val content = claude.complete(spec.system, projectBrief(project))
+    // 저장소 코드 수집(URL 또는 org/이름) — 에이전트가 실제 코드를 반영하게 프롬프트에 첨부.
+    val code = runCatching { collectCodeContext(project) }.getOrNull()
+    val brief = projectBrief(project) + (code?.let { "\n\n[저장소 코드 분석 자료 — 실제 저장소에서 수집됨]\n$it" } ?: "")
+    val content = claude.complete(spec.system, brief, maxTokens = 12000)
     val today = LocalDate.now().toString()
     val e = existing ?: ProjectDocEntity(id = "$projectId:$docType", projectId = projectId, docType = docType, createdDate = today)
     e.title = project.name
@@ -54,7 +59,7 @@ class ProjectDocService(
     e.docVersion = if (existing == null) "v1.0" else bump(existing.docVersion)
     e.updatedDate = today
     e.source = if (content != null) "agent" else "template"
-    e.contentMd = content ?: spec.template(project)
+    e.contentMd = content ?: (spec.template(project) + codeAppendix(code))
     e.updatedAt = Instant.now().toString()
     return docs.save(e).toDto()
   }
@@ -94,8 +99,63 @@ class ProjectDocService(
     appendLine("설명: ${p.desc}")
     appendLine("단계: ${p.stage}")
     appendLine("저장소:")
-    p.repos.forEach { appendLine("- ${p.org}/${it.name} (${it.purpose})") }
+    p.repos.forEach { appendLine("- ${coordsOf(p, it).let { (o, n) -> "$o/$n" }} (${it.purpose})") }
   }
+
+  // 저장소 좌표 — URL 이 있으면 URL 의 owner/이름, 없으면 프로젝트 org/이름.
+  private fun coordsOf(p: ProjectEntity, r: ProjectRepo): Pair<String, String> {
+    val m = Regex("""github\.com[:/]+([\w.-]+)/([\w.-]+?)(?:\.git)?(?:[/#?].*)?$""").find(r.url)
+    return if (m != null) m.groupValues[1] to m.groupValues[2] else p.org to r.name
+  }
+
+  // 실제 저장소에서 메타·파일 구조·매니페스트·README 를 수집해 분석 자료로 만든다.
+  // 접근 불가(비공개+토큰 없음, 존재하지 않는 org 등)한 저장소는 조용히 건너뛰어요.
+  private fun collectCodeContext(p: ProjectEntity): String? {
+    val parts = p.repos.take(3).mapNotNull { r ->
+      val (owner, name) = coordsOf(p, r)
+      val meta = gitHub.repoMeta(owner, name) ?: return@mapNotNull null
+      val branch = meta.path("default_branch").asText("main")
+      val desc = meta.path("description").asText("")
+      val lang = meta.path("language").asText("")
+      val paths = gitHub.treePaths(owner, name, branch)
+        .filterNot { it.contains("node_modules/") || it.startsWith(".git") }
+      val manifestName = listOf(
+        "package.json", "build.gradle.kts", "build.gradle", "pom.xml",
+        "pyproject.toml", "requirements.txt", "go.mod", "Cargo.toml",
+      ).firstOrNull { mf -> paths.any { it == mf } }
+      val manifest = manifestName?.let { gitHub.fileText(owner, name, it)?.take(2000) }
+      val readme = gitHub.readme(owner, name)?.take(4000)
+      buildString {
+        appendLine("### $owner/$name (${r.purpose})")
+        if (desc.isNotBlank()) appendLine("- 설명: $desc")
+        appendLine("- 주 언어: ${lang.ifBlank { "미상" }} · 기본 브랜치: $branch · 파일 ${paths.size}개")
+        if (paths.isNotEmpty()) {
+          appendLine("- 파일 구조(일부):")
+          appendLine("```")
+          paths.take(60).forEach { appendLine(it) }
+          appendLine("```")
+        }
+        if (manifest != null) {
+          appendLine("- $manifestName:")
+          appendLine("```")
+          appendLine(manifest)
+          appendLine("```")
+        }
+        if (readme != null) {
+          appendLine("- README 발췌:")
+          appendLine("```")
+          appendLine(readme)
+          appendLine("```")
+        }
+      }
+    }
+    return parts.takeIf { it.isNotEmpty() }?.joinToString("\n\n")
+  }
+
+  // 템플릿 폴백일 때 수집 자료를 문서 끝에 한 섹션으로 붙인다(에이전트 키가 있으면 본문 전체에 반영됨).
+  private fun codeAppendix(code: String?): String =
+    if (code == null) "" else "\n\n## 저장소 분석 자료 (자동 수집)\n" +
+      "서버가 GitHub API 로 실제 저장소에서 수집한 자료예요. ANTHROPIC_API_KEY 를 연결하면 에이전트가 이 자료를 반영해 문서 전체를 다시 작성할 수 있어요.\n\n" + code
 
   private fun ProjectDocEntity.toDto() =
     ProjectDocDto(projectId, docType, title, client, author, docVersion, createdDate, updatedDate, source, contentMd, updatedAt)
@@ -107,6 +167,8 @@ class ProjectDocService(
       5. 사용자 유형(표) / 6. 미결 사항(의사결정·외부 계약 체크) / 7. 핵심 플로우 / 8. 화면 명세(IA 트리, SCR 목록 표, 화면 흐름도, 공통 상태 처리 부록).
       각 대주제는 반드시 `## ` 제목으로 시작하세요(화면에서 주제별로 쪼개 편집해요).
       저장소 구성(purpose)을 기술 스택·도메인 방향에 반영하고, 확정할 수 없는 것은 6. 미결 사항에 질문으로 남기세요.
+      [저장소 코드 분석 자료]가 주어지면 추측하지 말고 그 자료(실제 파일 구조·매니페스트·README)를 근거로
+      기술 스택·도메인·핵심 플로우를 작성하고, 자료와 입력 설명이 다르면 미결 사항에 그 차이를 기록하세요.
       문서 본문만 출력하고 머리말·꼬리말은 붙이지 마세요.
     """.trimIndent()
 
@@ -117,6 +179,8 @@ class ProjectDocService(
       5. 디자인 토큰·컴포넌트 — 색상·타이포·간격 표 / 6. 공통 상태 처리 — Loading·Error·Empty·권한 가드.
       각 대주제는 반드시 `## ` 제목으로 시작하세요(화면에서 주제별로 쪼개 편집해요).
       저장소 구성(purpose)에서 프론트엔드 저장소를 화면 구현 대상으로 삼고, 확정할 수 없는 것은 명세에 질문으로 남기세요.
+      [저장소 코드 분석 자료]가 주어지면 추측하지 말고 실제 파일 구조(라우트·화면 파일)를 근거로 IA 트리와 SCR 목록을
+      구성하고, 기존 화면이 확인되면 신규 제안과 구분해 표기하세요.
       문서 본문만 출력하고 머리말·꼬리말은 붙이지 마세요.
     """.trimIndent()
   }

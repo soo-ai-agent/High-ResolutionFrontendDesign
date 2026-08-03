@@ -176,7 +176,7 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   const [name, setName] = useState("")
   const [desc, setDesc] = useState("")
   const [org, setOrg] = useState("sample-org")
-  const [repos, setRepos] = useState([{ name: "", purpose: "프론트엔드" }])
+  const [repos, setRepos] = useState<{ name: string; purpose: string; url?: string }[]>([{ name: "", purpose: "프론트엔드" }])
   const [domains, setDomains] = useState<string[]>(["admin", "auth"])
   const [integ, setInteg] = useState({ github: true, supabase: true, slack: false })
 
@@ -184,7 +184,14 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1))
   const prev = () => setStep((s) => Math.max(s - 1, 0))
 
-  const setRepo = (i: number, patch: Partial<{ name: string; purpose: string }>) => setRepos((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+  const setRepo = (i: number, patch: Partial<{ name: string; purpose: string; url?: string }>) => setRepos((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)))
+
+  // 이름 칸에 GitHub 링크(또는 owner/이름)를 붙여넣으면 파싱해 URL 로 연결해요.
+  const onRepoInput = (i: number, v: string) => {
+    const m = /github\.com[:/]+([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:[/#?].*)?$/.exec(v.trim())
+    if (m) setRepo(i, { name: m[2], url: `https://github.com/${m[1]}/${m[2]}` })
+    else setRepo(i, { name: v, url: undefined })
+  }
   const addRepo = () => setRepos((rs) => [...rs, { name: "", purpose: "백엔드" }])
   const removeRepo = (i: number) => setRepos((rs) => (rs.length > 1 ? rs.filter((_, j) => j !== i) : rs))
   const toggleDomain = (d: string) => setDomains((ds) => (ds.includes(d) ? ds.filter((x) => x !== d) : [...ds, d]))
@@ -202,7 +209,7 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
         desc: desc.trim(),
         stage: "계획",
         progress: 0,
-        repos: validRepos.map((r) => ({ name: r.name.trim(), purpose: r.purpose })),
+        repos: validRepos.map((r) => ({ name: r.name.trim(), purpose: r.purpose, ...(r.url ? { url: r.url } : {}) })),
         tasks: 0,
         prs: 0,
         fails: 0,
@@ -261,13 +268,20 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
             <div className="space-y-3">
               <p className="rounded-[10px] bg-surface-2 px-4 py-2.5 text-[12px] text-text-secondary">한 프로젝트는 <b className="text-text-primary">여러 깃 저장소</b>를 묶어요. 프론트·백엔드·인프라처럼 역할별로 저장소를 나눠 연결하세요.</p>
               {repos.map((r, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-4.5 w-4.5 text-text-secondary" /></span>
-                  <input value={r.name} onChange={(e) => setRepo(i, { name: e.target.value })} placeholder="저장소 이름 (예: admin-web)" className="h-10 flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
-                  <select value={r.purpose} onChange={(e) => setRepo(i, { purpose: e.target.value })} className="h-10 rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
-                    {REPO_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
-                  </select>
-                  <button onClick={() => removeRepo(i)} disabled={repos.length === 1} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-text-tertiary hover:bg-hover disabled:opacity-30" aria-label="삭제"><Icon name="close" className="h-4 w-4" /></button>
+                <div key={i}>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-4.5 w-4.5 text-text-secondary" /></span>
+                    <input value={r.name} onChange={(e) => onRepoInput(i, e.target.value)} placeholder="저장소 이름 또는 GitHub 링크 붙여넣기" className="h-10 flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
+                    <select value={r.purpose} onChange={(e) => setRepo(i, { purpose: e.target.value })} className="h-10 rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
+                      {REPO_PURPOSES.map((p) => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                    <button onClick={() => removeRepo(i)} disabled={repos.length === 1} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] text-text-tertiary hover:bg-hover disabled:opacity-30" aria-label="삭제"><Icon name="close" className="h-4 w-4" /></button>
+                  </div>
+                  {r.url && (
+                    <div className="mt-1 flex items-center gap-1.5 pl-12 text-[11px] font-semibold text-blue">
+                      <Icon name="external" className="h-3 w-3" />{r.url} 연결됨 — 생성 시 이 저장소 코드를 분석해요
+                    </div>
+                  )}
                 </div>
               ))}
               <button onClick={addRepo} className="flex w-full items-center justify-center gap-1.5 rounded-[10px] border border-dashed border-line-strong py-2.5 text-[13px] font-semibold text-text-secondary hover:bg-hover"><Icon name="plus" className="h-4 w-4" />저장소 추가</button>
