@@ -1,7 +1,7 @@
-import { useEffect, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
 import type { ProjectItem } from "../data"
-import { getPrd, generatePrd, savePrd, type Prd } from "../lib/prd"
+import { getPrd, generatePrd, savePrd, splitPrd, joinPrd, type Prd } from "../lib/prd"
 
 const SOURCE_BADGE: Record<Prd["source"], { label: string; tone: "purple" | "neutral" | "blue" }> = {
   agent: { label: "에이전트 초안", tone: "purple" },
@@ -13,9 +13,16 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   const [prd, setPrd] = useState<Prd | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
-  const [editing, setEditing] = useState(false)
   const [error, setError] = useState("")
-  const [draft, setDraft] = useState({ title: "", client: "", author: "", contentMd: "" })
+  // 섹션 단위 수정 — 한 번에 한 섹션만
+  const [editingIdx, setEditingIdx] = useState<number | null>(null)
+  const [editText, setEditText] = useState("")
+  const [active, setActive] = useState(0)
+  // 문서 정보(의뢰사·작성자·제목) 수정
+  const [metaEditing, setMetaEditing] = useState(false)
+  const [meta, setMeta] = useState({ title: "", client: "", author: "" })
+
+  const blocks = useMemo(() => (prd ? splitPrd(prd.contentMd) : []), [prd])
 
   useEffect(() => {
     if (!project) return
@@ -28,10 +35,25 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
     return () => { alive = false }
   }, [project])
 
+  // 스크롤 위치에 따라 목차 활성 항목 갱신
+  useEffect(() => {
+    if (!prd || editingIdx !== null) return
+    const els = blocks.map((_, i) => document.getElementById(`prd-sec-${i}`)).filter((el): el is HTMLElement => !!el)
+    const io = new IntersectionObserver(
+      (entries) => {
+        const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
+        if (vis[0]) setActive(Number((vis[0].target as HTMLElement).dataset.idx))
+      },
+      { rootMargin: "-10% 0px -70% 0px" },
+    )
+    els.forEach((el) => io.observe(el))
+    return () => io.disconnect()
+  }, [blocks, editingIdx, prd])
+
   if (!project) {
     return (
       <div className="space-y-6">
-        <SectionTitle title="PRD" desc="프로젝트 생성 시 에이전트가 초안을 만들고, 관리자가 수정해 확정해요." />
+        <SectionTitle title="PRD" desc="프로젝트 생성 시 에이전트가 초안을 만들고, 관리자가 주제별로 수정해 확정해요." />
         <EmptyState title="선택된 프로젝트가 없어요." desc="프로젝트 목록에서 프로젝트를 열면 그 프로젝트의 PRD 를 볼 수 있어요." />
       </div>
     )
@@ -40,20 +62,44 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   const regenerate = async () => {
     if (prd && !window.confirm("현재 내용을 새 초안으로 덮어쓰고 버전을 올려요. 계속할까요?")) return
     setBusy(true); setError("")
-    try { setPrd(await generatePrd(project.id)) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+    try { setPrd(await generatePrd(project.id)); setEditingIdx(null) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
-  const startEdit = () => {
+  const downloadMd = () => {
     if (!prd) return
-    setDraft({ title: prd.title, client: prd.client, author: prd.author, contentMd: prd.contentMd })
-    setEditing(true)
+    const blob = new Blob([prd.contentMd], { type: "text/markdown;charset=utf-8" })
+    const a = document.createElement("a")
+    a.href = URL.createObjectURL(blob)
+    a.download = `PRD-${prd.title}.md`
+    a.click()
+    URL.revokeObjectURL(a.href)
   }
 
-  const save = async () => {
+  const jumpTo = (i: number) => {
+    setActive(i)
+    document.getElementById(`prd-sec-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  const startEdit = (i: number) => {
+    setEditingIdx(i)
+    setEditText(blocks[i].md)
+  }
+
+  const saveSection = async () => {
+    if (!prd || editingIdx === null) return
     setBusy(true); setError("")
     try {
-      setPrd(await savePrd(project.id, draft))
-      setEditing(false)
+      const next = blocks.map((b, i) => (i === editingIdx ? { ...b, md: editText } : b))
+      setPrd(await savePrd(project.id, { contentMd: joinPrd(next) }))
+      setEditingIdx(null)
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+
+  const saveMeta = async () => {
+    setBusy(true); setError("")
+    try {
+      setPrd(await savePrd(project.id, meta))
+      setMetaEditing(false)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
@@ -61,12 +107,12 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
     <div className="space-y-6">
       <SectionTitle
         title={`PRD: ${prd?.title ?? project.name}`}
-        desc="프로젝트 생성 시 에이전트가 초안을 만들고, 관리자가 수정해 확정해요. 모든 변경은 서버 DB에 저장돼요."
-        action={prd && !editing ? (
+        desc="주제별로 각각 수정할 수 있어요. 저장할 때마다 문서 버전이 올라가고, 전체는 하나의 마크다운으로 내보낼 수 있어요."
+        action={prd ? (
           <div className="flex items-center gap-2">
             <Badge tone={SOURCE_BADGE[prd.source].tone}>{SOURCE_BADGE[prd.source].label}</Badge>
-            <Button variant="secondary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 생성"}</Button>
-            <Button variant="primary" onClick={startEdit} icon={<Icon name="doc" className="h-4 w-4" />}>수정</Button>
+            <Button variant="secondary" size="sm" onClick={downloadMd} icon={<Icon name="download" className="h-4 w-4" />}>MD 다운로드</Button>
+            <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 생성"}</Button>
           </div>
         ) : undefined}
       />
@@ -81,58 +127,99 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
           desc="프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 초안을 만들어요. 서버에 ANTHROPIC_API_KEY 가 있으면 Claude 가, 없으면 구조화된 템플릿이 초안을 작성해요."
           action={<Button variant="primary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4.5 w-4.5" />}>{busy ? "생성 중…" : "에이전트로 PRD 생성"}</Button>}
         />
-      ) : editing ? (
-        <Card className="space-y-4 p-6">
-          <div className="grid gap-3 sm:grid-cols-3">
-            <Field label="문서 제목"><input value={draft.title} onChange={(e) => setDraft({ ...draft, title: e.target.value })} className="w-full rounded-[10px] border border-line px-3 py-2 text-[14px]" /></Field>
-            <Field label="의뢰사"><input value={draft.client} onChange={(e) => setDraft({ ...draft, client: e.target.value })} className="w-full rounded-[10px] border border-line px-3 py-2 text-[14px]" /></Field>
-            <Field label="작성자"><input value={draft.author} onChange={(e) => setDraft({ ...draft, author: e.target.value })} className="w-full rounded-[10px] border border-line px-3 py-2 text-[14px]" /></Field>
-          </div>
-          <Field label="본문 (마크다운)">
-            <textarea value={draft.contentMd} onChange={(e) => setDraft({ ...draft, contentMd: e.target.value })}
-              className="h-[60vh] w-full resize-y rounded-[10px] border border-line p-4 font-mono text-[13px] leading-relaxed" spellCheck={false} />
-          </Field>
-          <div className="flex justify-end gap-2">
-            <Button variant="secondary" onClick={() => setEditing(false)} disabled={busy}>취소</Button>
-            <Button variant="primary" onClick={save} disabled={busy}>{busy ? "저장 중…" : `저장 (버전 올림)`}</Button>
-          </div>
-        </Card>
       ) : (
-        <>
-          {/* 문서 개요 — 항목/내용 표 */}
-          <Card className="overflow-hidden">
-            <table className="w-full text-[13px]">
-              <tbody>
-                {[
-                  ["의뢰사", prd.client],
-                  ["작성자", prd.author],
-                  ["최초 작성일", prd.createdDate],
-                  ["최종 수정일", prd.updatedDate],
-                  ["문서 버전", prd.docVersion],
-                ].map(([k, v]) => (
-                  <tr key={k} className="border-b border-line last:border-0">
-                    <td className="w-40 bg-surface-2 px-4 py-2.5 font-bold text-text-secondary">{k}</td>
-                    <td className="px-4 py-2.5 text-text-primary">{v}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <div className="grid items-start gap-6 lg:grid-cols-[240px_1fr]">
+          {/* 좌측 세부 메뉴 — 큰 주제(##) 목차, 클릭 시 해당 섹션으로 이동 */}
+          <Card className="top-0 h-fit p-2 lg:sticky">
+            <div className="px-3 pb-2 pt-2 text-[11px] font-bold uppercase tracking-wider text-text-disabled">문서 목차</div>
+            {blocks.map((b, i) => (
+              <button key={i} onClick={() => jumpTo(i)}
+                className={`block w-full truncate rounded-[10px] px-3 py-2 text-left text-[13px] font-semibold ${active === i ? "bg-selected text-blue" : "text-text-secondary hover:bg-hover"}`}>
+                {b.title}
+              </button>
+            ))}
+            <div className="mt-2 border-t border-line px-3 py-2 text-[11px] leading-relaxed text-text-tertiary">
+              섹션마다 <b>수정</b> 버튼으로 그 주제만 고칠 수 있어요.
+            </div>
           </Card>
 
-          <Card className="p-8">
-            <Markdown text={prd.contentMd} />
-          </Card>
-        </>
+          <div className="min-w-0 space-y-4">
+            {/* 문서 개요 표 + 정보 수정 */}
+            <Card className="overflow-hidden">
+              <div className="flex items-center justify-between border-b border-line px-4 py-2.5">
+                <span className="text-[12px] font-bold uppercase tracking-wide text-text-disabled">문서 정보</span>
+                {metaEditing ? (
+                  <div className="flex gap-1.5">
+                    <Button variant="tertiary" size="sm" onClick={() => setMetaEditing(false)} disabled={busy}>취소</Button>
+                    <Button variant="primary" size="sm" onClick={saveMeta} disabled={busy}>{busy ? "저장 중…" : "정보 저장"}</Button>
+                  </div>
+                ) : (
+                  <Button variant="tertiary" size="sm" onClick={() => { setMeta({ title: prd.title, client: prd.client, author: prd.author }); setMetaEditing(true) }}>정보 수정</Button>
+                )}
+              </div>
+              {metaEditing ? (
+                <div className="grid gap-3 p-4 sm:grid-cols-3">
+                  <MetaField label="문서 제목" value={meta.title} onChange={(v) => setMeta({ ...meta, title: v })} />
+                  <MetaField label="의뢰사" value={meta.client} onChange={(v) => setMeta({ ...meta, client: v })} />
+                  <MetaField label="작성자" value={meta.author} onChange={(v) => setMeta({ ...meta, author: v })} />
+                </div>
+              ) : (
+                <table className="w-full text-[13px]">
+                  <tbody>
+                    {[
+                      ["의뢰사", prd.client],
+                      ["작성자", prd.author],
+                      ["최초 작성일", prd.createdDate],
+                      ["최종 수정일", prd.updatedDate],
+                      ["문서 버전", prd.docVersion],
+                    ].map(([k, v]) => (
+                      <tr key={k} className="border-b border-line last:border-0">
+                        <td className="w-40 bg-surface-2 px-4 py-2.5 font-bold text-text-secondary">{k}</td>
+                        <td className="px-4 py-2.5 text-text-primary">{v}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </Card>
+
+            {/* 섹션 카드 — 주제별 개별 수정 */}
+            {blocks.map((b, i) => (
+              <div key={`${i}-${b.title}`} id={`prd-sec-${i}`} data-idx={i} className="scroll-mt-4">
+              <Card className="relative p-6">
+                {editingIdx === i ? (
+                  <div className="space-y-3">
+                    <div className="text-[12px] font-bold text-text-secondary">"{b.title}" 수정 중 — 마크다운으로 편집해요.</div>
+                    <textarea value={editText} onChange={(e) => setEditText(e.target.value)}
+                      className="h-[45vh] w-full resize-y rounded-[10px] border border-line p-4 font-mono text-[13px] leading-relaxed" spellCheck={false} autoFocus />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="secondary" size="sm" onClick={() => setEditingIdx(null)} disabled={busy}>취소</Button>
+                      <Button variant="primary" size="sm" onClick={saveSection} disabled={busy}>{busy ? "저장 중…" : "섹션 저장 (버전 올림)"}</Button>
+                    </div>
+                  </div>
+                ) : (
+                  <>
+                    <div className="absolute right-4 top-4">
+                      <Button variant="tertiary" size="sm" onClick={() => startEdit(i)} icon={<Icon name="doc" className="h-3.5 w-3.5" />}>수정</Button>
+                    </div>
+                    <div className="pr-20"><Markdown text={b.md} /></div>
+                  </>
+                )}
+              </Card>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
     </div>
   )
 }
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
+function MetaField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
   return (
     <label className="block">
       <span className="mb-1 block text-[12px] font-bold text-text-secondary">{label}</span>
-      {children}
+      <input value={value} onChange={(e) => onChange(e.target.value)} className="w-full rounded-[10px] border border-line px-3 py-2 text-[14px]" />
     </label>
   )
 }
@@ -191,7 +278,7 @@ function Markdown({ text }: { text: string }) {
     const heading = /^(#{1,3})\s+(.*)$/.exec(line)
     if (heading) {
       const level = heading[1].length
-      const cls = level === 1 ? "mt-2 text-[22px] font-bold" : level === 2 ? "mt-6 text-[17px] font-bold" : "mt-4 text-[14px] font-bold"
+      const cls = level === 1 ? "mt-1 text-[22px] font-bold" : level === 2 ? "text-[17px] font-bold" : "mt-4 text-[14px] font-bold"
       out.push(<div key={key++} className={`${cls} text-text-primary`}><Inline text={heading[2]} /></div>)
       i++
       continue

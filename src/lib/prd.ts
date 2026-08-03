@@ -45,3 +45,40 @@ export const savePrd = (projectId: string, patch: PrdPatch) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   })
+
+// ===== 섹션 분리/결합 =====
+// 문서 원천은 하나의 마크다운. 화면에서는 `## ` 큰 주제 단위로 쪼개 각각 수정하고,
+// 저장할 때 다시 하나로 합쳐요. 코드 펜스(```) 안의 ## 은 경계로 치지 않아요.
+
+export type PrdBlock = {
+  title: string // 목차에 보일 제목 (## 뒤 텍스트, 머리 블록은 "개요")
+  md: string // 블록 원문 (## 제목 줄 포함)
+  isHeader: boolean // 첫 ## 이전의 머리 블록(# 제목·도입부) 여부
+}
+
+export function splitPrd(md: string): PrdBlock[] {
+  const lines = md.replace(/\r\n/g, "\n").split("\n")
+  const blocks: PrdBlock[] = []
+  let cur: string[] = []
+  let curTitle = "개요"
+  let curHeader = true
+  let inFence = false
+  const flush = () => {
+    if (cur.some((l) => l.trim() !== "")) blocks.push({ title: curTitle, md: cur.join("\n").trimEnd(), isHeader: curHeader })
+    cur = []
+  }
+  for (const line of lines) {
+    if (line.startsWith("```")) inFence = !inFence
+    const m = inFence ? null : /^##(?!#)\s+(.+)$/.exec(line)
+    if (m) {
+      flush()
+      curTitle = m[1].trim()
+      curHeader = false
+    }
+    cur.push(line)
+  }
+  flush()
+  return blocks
+}
+
+export const joinPrd = (blocks: PrdBlock[]): string => blocks.map((b) => b.md.trimEnd()).join("\n\n") + "\n"
