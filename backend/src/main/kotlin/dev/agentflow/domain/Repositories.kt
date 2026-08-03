@@ -34,6 +34,11 @@ interface ProjectDocRepository : JpaRepository<ProjectDocEntity, String> {
   fun findByProjectIdAndDocType(projectId: String, docType: String): ProjectDocEntity?
 }
 
+interface ProjectDocRevisionRepository : JpaRepository<ProjectDocRevisionEntity, Long> {
+  fun findByDocIdOrderBySeqDesc(docId: String): List<ProjectDocRevisionEntity>
+  fun findByDocIdAndSeq(docId: String, seq: Long): ProjectDocRevisionEntity?
+}
+
 interface TaskRepository : JpaRepository<TaskEntity, String> {
   fun findByProjectIdOrderBySeq(projectId: String): List<TaskEntity>
 }

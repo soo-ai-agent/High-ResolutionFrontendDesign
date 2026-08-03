@@ -2,8 +2,11 @@ package dev.agentflow.service
 
 import dev.agentflow.domain.ProjectDocEntity
 import dev.agentflow.domain.ProjectDocRepository
+import dev.agentflow.domain.ProjectDocRevisionEntity
+import dev.agentflow.domain.ProjectDocRevisionRepository
 import dev.agentflow.domain.ProjectEntity
 import dev.agentflow.domain.ProjectRepository
+import dev.agentflow.dto.DocRevisionDto
 import dev.agentflow.dto.DocUpdateRequest
 import dev.agentflow.dto.ProjectDocDto
 import dev.agentflow.dto.ProjectRepo
@@ -19,6 +22,7 @@ import java.time.LocalDate
 @Service
 class ProjectDocService(
   private val docs: ProjectDocRepository,
+  private val revisions: ProjectDocRevisionRepository,
   private val projects: ProjectRepository,
   private val llm: LlmService,
   private val gitHub: GitHubService,
@@ -62,7 +66,9 @@ class ProjectDocService(
     e.source = if (content != null) "agent" else "template"
     e.contentMd = content ?: (spec.template(project) + codeAppendix(code))
     e.updatedAt = Instant.now().toString()
-    return docs.save(e).toDto()
+    val saved = docs.save(e)
+    snapshot(saved, if (content != null) "에이전트 초안 생성" else "템플릿 초안 생성")
+    return saved.toDto()
   }
 
   // 프로젝트 생성 훅 — 모든 문서 타입 초안을 순서대로 생성(한 타입 실패해도 나머지는 계속).
@@ -83,8 +89,57 @@ class ProjectDocService(
     e.updatedDate = LocalDate.now().toString()
     e.source = "human"
     e.updatedAt = Instant.now().toString()
-    return docs.save(e).toDto()
+    val saved = docs.save(e)
+    snapshot(saved, "사람 수정")
+    return saved.toDto()
   }
+
+  // ---- 버전 이력 — 리비전마다 전문이 남아 초안 대비 변경을 비교(diff)할 수 있어요 ----
+
+  // 이력 조회. 리비전 기능 이전에 만든 문서는 현재 상태를 첫 리비전으로 채워 이력을 시작해요.
+  fun listRevisions(projectId: String, docType: String): List<DocRevisionDto> {
+    requireType(docType)
+    val doc = docs.findByProjectIdAndDocType(projectId, docType)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "문서가 아직 없어요.")
+    if (revisions.findByDocIdOrderBySeqDesc(doc.id).isEmpty()) snapshot(doc, "이력 시작 (기존 문서)")
+    return revisions.findByDocIdOrderBySeqDesc(doc.id).map { it.toDto(withContent = false) }
+  }
+
+  fun getRevision(projectId: String, docType: String, seq: Long): DocRevisionDto {
+    requireType(docType)
+    val doc = docs.findByProjectIdAndDocType(projectId, docType)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "문서가 아직 없어요.")
+    val r = revisions.findByDocIdAndSeq(doc.id, seq)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "리비전이 없어요.")
+    return r.toDto(withContent = true)
+  }
+
+  // 선택한 리비전 내용으로 되돌리기 — 새 버전으로 저장되고, 이 행동도 리비전으로 남아요.
+  fun restoreRevision(projectId: String, docType: String, seq: Long): ProjectDocDto {
+    requireType(docType)
+    val e = docs.findByProjectIdAndDocType(projectId, docType)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "문서가 아직 없어요.")
+    val r = revisions.findByDocIdAndSeq(e.id, seq)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "리비전이 없어요.")
+    e.contentMd = r.contentMd
+    e.docVersion = bump(e.docVersion)
+    e.updatedDate = LocalDate.now().toString()
+    e.source = "human"
+    e.updatedAt = Instant.now().toString()
+    val saved = docs.save(e)
+    snapshot(saved, "${r.docVersion} (${r.note}) 내용으로 되돌림")
+    return saved.toDto()
+  }
+
+  private fun snapshot(e: ProjectDocEntity, note: String) {
+    revisions.save(ProjectDocRevisionEntity(
+      docId = e.id, docVersion = e.docVersion, source = e.source, author = e.author,
+      note = note, contentMd = e.contentMd, at = Instant.now().toString(),
+    ))
+  }
+
+  private fun ProjectDocRevisionEntity.toDto(withContent: Boolean) =
+    DocRevisionDto(seq, docVersion, source, author, note, at, contentMd.length, if (withContent) contentMd else null)
 
   private fun requireType(docType: String): DocSpec =
     specs[docType] ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "지원하지 않는 문서 타입: $docType")

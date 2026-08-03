@@ -39,6 +39,18 @@ data class ProjectDocDto(
 )
 data class DocUpdateRequest(val title: String?, val client: String?, val author: String?, val contentMd: String?)
 
+// 문서 리비전 — 목록 조회에서는 contentMd 를 비워 응답을 가볍게, 단건 조회에서만 전문 포함.
+data class DocRevisionDto(
+  val seq: Long,
+  val docVersion: String,
+  val source: String,
+  val author: String,
+  val note: String,
+  val at: String,
+  val length: Int,
+  val contentMd: String? = null,
+)
+
 // ---- 작업 (프로젝트별 태스크) ----
 data class TaskDto(
   val id: String,

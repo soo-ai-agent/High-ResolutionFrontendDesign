@@ -50,6 +50,27 @@ export const saveDoc = (projectId: string, type: DocType, patch: DocPatch) =>
     body: JSON.stringify(patch),
   })
 
+// ---- 버전 이력 — 생성·수정 때마다 전문이 남아, 에이전트 초안과 현재 문서를 비교(diff)해요 ----
+export type DocRevision = {
+  seq: number
+  docVersion: string
+  source: ProjectDoc["source"]
+  author: string
+  note: string
+  at: string
+  length: number
+  contentMd: string | null // 목록에서는 null, 단건 조회에서만 전문
+}
+
+export const listDocRevisions = (projectId: string, type: DocType) =>
+  j<DocRevision[]>(`/api/mirror/projects/${projectId}/docs/${type}/revisions`)
+
+export const getDocRevision = (projectId: string, type: DocType, seq: number) =>
+  j<DocRevision>(`/api/mirror/projects/${projectId}/docs/${type}/revisions/${seq}`)
+
+export const restoreDocRevision = (projectId: string, type: DocType, seq: number) =>
+  j<ProjectDoc>(`/api/mirror/projects/${projectId}/docs/${type}/revisions/${seq}/restore`, { method: "POST" })
+
 // ===== 섹션 분리/결합 =====
 // 문서 원천은 하나의 마크다운. 화면에서는 `## ` 큰 주제 단위로 쪼개 각각 수정하고,
 // 저장할 때 다시 하나로 합쳐요. 코드 펜스(```) 안의 ## 은 경계로 치지 않아요.

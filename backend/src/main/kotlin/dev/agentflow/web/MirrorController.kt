@@ -107,4 +107,16 @@ class MirrorController(
   @PutMapping("/projects/{id}/docs/{type}")
   fun updateDoc(@PathVariable id: String, @PathVariable type: String, @RequestBody req: DocUpdateRequest): ProjectDocDto =
     docs.update(id, type, req)
+
+  // ---- 문서 버전 이력 (에이전트 초안 보존 · diff 평가용) ----
+  @GetMapping("/projects/{id}/docs/{type}/revisions")
+  fun docRevisions(@PathVariable id: String, @PathVariable type: String): List<DocRevisionDto> = docs.listRevisions(id, type)
+
+  @GetMapping("/projects/{id}/docs/{type}/revisions/{seq}")
+  fun docRevision(@PathVariable id: String, @PathVariable type: String, @PathVariable seq: Long): DocRevisionDto =
+    docs.getRevision(id, type, seq)
+
+  @PostMapping("/projects/{id}/docs/{type}/revisions/{seq}/restore")
+  fun restoreDocRevision(@PathVariable id: String, @PathVariable type: String, @PathVariable seq: Long): ProjectDocDto =
+    docs.restoreRevision(id, type, seq)
 }

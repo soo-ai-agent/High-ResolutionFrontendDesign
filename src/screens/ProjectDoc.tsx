@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
-import { Icon, Button, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
+import { Icon, IconButton, Button, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
 import type { ProjectItem } from "../data"
-import { getDoc, generateDoc, saveDoc, splitDoc, joinDoc, type ProjectDoc, type DocType } from "../lib/projectDocs"
+import { getDoc, generateDoc, saveDoc, splitDoc, joinDoc, listDocRevisions, getDocRevision, restoreDocRevision, type ProjectDoc, type DocType, type DocRevision } from "../lib/projectDocs"
+import { diffLines, type DiffOp } from "../lib/diff"
 
 const SOURCE_BADGE: Record<ProjectDoc["source"], { label: string; tone: "purple" | "neutral" | "blue" }> = {
   agent: { label: "에이전트 초안", tone: "purple" },
@@ -28,6 +29,8 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
   // 문서 정보(의뢰사·작성자·제목) 수정
   const [metaEditing, setMetaEditing] = useState(false)
   const [meta, setMeta] = useState({ title: "", client: "", author: "" })
+  // 버전 이력 — 에이전트 초안과 현재 문서를 비교(diff)해 평가해요.
+  const [historyOpen, setHistoryOpen] = useState(false)
 
   const blocks = useMemo(() => (doc ? splitDoc(doc.contentMd) : []), [doc])
 
@@ -120,6 +123,7 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
         action={doc ? (
           <div className="flex items-center gap-2">
             <Badge tone={SOURCE_BADGE[doc.source].tone}>{SOURCE_BADGE[doc.source].label}</Badge>
+            <Button variant="secondary" size="sm" onClick={() => setHistoryOpen(true)} icon={<Icon name="list" className="h-4 w-4" />}>버전 이력</Button>
             <Button variant="secondary" size="sm" onClick={downloadMd} icon={<Icon name="download" className="h-4 w-4" />}>MD 다운로드</Button>
             <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 생성"}</Button>
           </div>
@@ -220,8 +224,180 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
           </div>
         </div>
       )}
+
+      {historyOpen && doc && (
+        <DocHistoryModal
+          project={project}
+          docType={docType}
+          current={doc}
+          onClose={() => setHistoryOpen(false)}
+          onRestored={(d) => { setDoc(d); setEditingIdx(null); setHistoryOpen(false) }}
+        />
+      )}
     </div>
   )
+}
+
+// ===== 버전 이력 모달 — 리비전 목록 + 선택 리비전 → 현재 문서 diff =====
+
+const REV_NOTE_TONE: Record<ProjectDoc["source"], "purple" | "neutral" | "blue"> = { agent: "purple", template: "neutral", human: "blue" }
+
+function DocHistoryModal({ project, docType, current, onClose, onRestored }: {
+  project: ProjectItem
+  docType: DocType
+  current: ProjectDoc
+  onClose: () => void
+  onRestored: (d: ProjectDoc) => void
+}) {
+  const [revs, setRevs] = useState<DocRevision[]>([])
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState("")
+  const [selSeq, setSelSeq] = useState<number | null>(null)
+  const [selContent, setSelContent] = useState<string | null>(null)
+  const [mode, setMode] = useState<"diff" | "raw">("diff")
+
+  useEffect(() => {
+    let alive = true
+    listDocRevisions(project.id, docType)
+      .then((rs) => {
+        if (!alive) return
+        setRevs(rs)
+        // 평가 기본값: 가장 오래된 초안(에이전트/템플릿) — 초안 대비 무엇이 바뀌었는지 바로 보여요.
+        const base = [...rs].reverse().find((r) => r.source !== "human") ?? rs[rs.length - 1]
+        if (base) setSelSeq(base.seq)
+      })
+      .catch((e) => { if (alive) setError((e as Error).message) })
+      .finally(() => { if (alive) setLoading(false) })
+    return () => { alive = false }
+  }, [project.id, docType])
+
+  useEffect(() => {
+    if (selSeq == null) return
+    let alive = true
+    setSelContent(null)
+    getDocRevision(project.id, docType, selSeq)
+      .then((r) => { if (alive) setSelContent(r.contentMd ?? "") })
+      .catch((e) => { if (alive) setError((e as Error).message) })
+    return () => { alive = false }
+  }, [project.id, docType, selSeq])
+
+  const sel = revs.find((r) => r.seq === selSeq) ?? null
+  const ops = useMemo(() => (selContent != null ? diffLines(selContent, current.contentMd) : null), [selContent, current.contentMd])
+  const added = ops?.filter((o) => o.type === "add").length ?? 0
+  const removed = ops?.filter((o) => o.type === "del").length ?? 0
+  const identical = ops != null && added === 0 && removed === 0
+
+  const restore = async () => {
+    if (!sel || !window.confirm(`${sel.docVersion} (${sel.note}) 내용으로 되돌릴까요? 새 버전으로 저장되고 이 행동도 이력에 남아요.`)) return
+    setBusy(true); setError("")
+    try { onRestored(await restoreDocRevision(project.id, docType, sel.seq)) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="af-overlay absolute inset-0 bg-[#191f28]/30" onClick={onClose} />
+      <div className="af-fade relative flex h-[86vh] w-full max-w-[1100px] flex-col rounded-[20px] bg-surface shadow-[var(--shadow-modal)]">
+        <div className="flex items-center justify-between border-b border-line px-6 py-4">
+          <div>
+            <h2 className="text-[17px] font-bold text-text-primary">버전 이력 · {current.title}</h2>
+            <p className="text-[12px] text-text-tertiary">리비전을 고르면 그 시점과 현재 문서({current.docVersion})의 차이를 보여줘요 — 에이전트 초안 대비 무엇이 바뀌었는지로 산출물을 평가할 수 있어요.</p>
+          </div>
+          <IconButton label="닫기" onClick={onClose}><Icon name="close" /></IconButton>
+        </div>
+
+        {error && <div className="border-b border-line bg-error-light px-6 py-2 text-[12px] font-semibold text-error">{error}</div>}
+
+        <div className="grid min-h-0 flex-1 lg:grid-cols-[300px_1fr]">
+          {/* 리비전 목록 */}
+          <div className="overflow-y-auto border-r border-line p-3">
+            {loading ? (
+              <div className="p-4 text-[13px] text-text-tertiary">이력을 불러오는 중…</div>
+            ) : (
+              revs.map((r) => (
+                <button key={r.seq} onClick={() => setSelSeq(r.seq)}
+                  className={`mb-1 block w-full rounded-[12px] px-3 py-2.5 text-left ${selSeq === r.seq ? "bg-selected" : "hover:bg-hover"}`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`font-mono text-[12px] font-bold ${selSeq === r.seq ? "text-blue" : "text-text-primary"}`}>{r.docVersion}</span>
+                    <Badge tone={REV_NOTE_TONE[r.source]}>{SOURCE_BADGE[r.source].label}</Badge>
+                  </div>
+                  <div className="mt-0.5 truncate text-[12px] text-text-secondary">{r.note}</div>
+                  <div className="mt-0.5 text-[11px] text-text-tertiary">{new Date(r.at).toLocaleString("ko-KR")} · {r.length.toLocaleString()}자</div>
+                </button>
+              ))
+            )}
+          </div>
+
+          {/* 비교 뷰 */}
+          <div className="flex min-h-0 flex-col">
+            <div className="flex flex-wrap items-center gap-2 border-b border-line px-4 py-2.5">
+              <span className="text-[12px] font-bold text-text-secondary">{sel ? `${sel.docVersion} → 현재(${current.docVersion})` : "리비전을 선택하세요"}</span>
+              {ops && (identical
+                ? <Badge tone="neutral">현재 문서와 동일</Badge>
+                : <span className="flex items-center gap-1.5 font-mono text-[12px] font-bold"><span className="text-success">+{added}줄</span><span className="text-error">−{removed}줄</span></span>)}
+              <div className="ml-auto flex items-center gap-1.5">
+                <Button variant={mode === "diff" ? "primary" : "secondary"} size="sm" onClick={() => setMode("diff")}>변경 비교</Button>
+                <Button variant={mode === "raw" ? "primary" : "secondary"} size="sm" onClick={() => setMode("raw")}>이 버전 전문</Button>
+                {sel && !identical && <Button variant="secondary" size="sm" onClick={restore} disabled={busy}>{busy ? "되돌리는 중…" : "이 버전으로 되돌리기"}</Button>}
+              </div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-4">
+              {selContent == null ? (
+                <div className="text-[13px] text-text-tertiary">내용을 불러오는 중…</div>
+              ) : mode === "raw" ? (
+                <pre className="whitespace-pre-wrap break-words font-mono text-[12px] leading-relaxed text-text-primary">{selContent}</pre>
+              ) : ops && (
+                identical
+                  ? <div className="text-[13px] text-text-tertiary">이 리비전은 현재 문서와 내용이 같아요.</div>
+                  : <DiffView ops={ops} />
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// diff 렌더 — 동일 구간이 길면 접어서 변경 부분에 집중해요.
+function DiffView({ ops }: { ops: DiffOp[] }) {
+  const [expanded, setExpanded] = useState<Set<number>>(new Set())
+  const rows: ReactNode[] = []
+  const line = (o: DiffOp, key: number) => (
+    <div key={key} className={`flex ${o.type === "add" ? "bg-success-light" : o.type === "del" ? "bg-error-light" : ""}`}>
+      <span className={`w-6 shrink-0 select-none text-center font-bold ${o.type === "add" ? "text-success" : o.type === "del" ? "text-error" : "text-text-disabled"}`}>
+        {o.type === "add" ? "+" : o.type === "del" ? "−" : ""}
+      </span>
+      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words">{o.text || " "}</span>
+    </div>
+  )
+  let i = 0
+  let key = 0
+  while (i < ops.length) {
+    if (ops[i].type === "same") {
+      let j = i
+      while (j < ops.length && ops[j].type === "same") j++
+      const run = ops.slice(i, j)
+      const runStart = i
+      if (run.length > 8 && !expanded.has(runStart)) {
+        run.slice(0, 3).forEach((o) => rows.push(line(o, key++)))
+        rows.push(
+          <button key={key++} onClick={() => setExpanded((s) => new Set(s).add(runStart))}
+            className="my-1 block w-full rounded-[8px] bg-surface-2 py-1 text-center text-[11px] font-semibold text-text-tertiary hover:bg-hover">
+            ⋯ 동일한 {run.length - 6}줄 펼치기
+          </button>,
+        )
+        run.slice(-3).forEach((o) => rows.push(line(o, key++)))
+      } else {
+        run.forEach((o) => rows.push(line(o, key++)))
+      }
+      i = j
+    } else {
+      rows.push(line(ops[i], key++))
+      i++
+    }
+  }
+  return <div className="font-mono text-[12px] leading-relaxed text-text-primary">{rows}</div>
 }
 
 function MetaField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {

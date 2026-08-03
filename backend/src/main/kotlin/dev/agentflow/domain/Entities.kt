@@ -156,6 +156,20 @@ class TaskEntity(
   var updatedAt: String = "",
 )
 
+// 문서 리비전 — 생성·수정 때마다 그 시점 전문을 남겨요. 에이전트 초안이 보존되므로
+// 사람 수정본과 비교(diff)해 에이전트 산출물을 평가할 수 있어요.
+@Entity
+class ProjectDocRevisionEntity(
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var seq: Long = 0,
+  var docId: String = "", // "<projectId>:<docType>"
+  var docVersion: String = "",
+  var source: String = "", // agent | template | human
+  var author: String = "",
+  @Column(length = 512) var note: String = "", // 에이전트 초안 생성 / 사람 수정 / 되돌림 ...
+  @Column(length = 100000) var contentMd: String = "",
+  var at: String = "",
+)
+
 // 태스크 활동 로그 — 생성·수정·이슈 연결·자동 완료 등 진행 이력을 시간순으로 남겨요.
 @Entity
 class TaskActivityEntity(
