@@ -18,7 +18,7 @@ const SCREENS: Record<string, (nav: (r: string) => void, project: ProjectItem | 
   tasks: (_nav, project) => <TasksScreen project={project} />,
   mirror: (nav) => <Mirror navigate={nav} />,
   "projects-board": () => <Board />,
-  "human-tasks": () => <HumanTasks />,
+  "human-tasks": (_nav, project) => <HumanTasks project={project} />,
   settings: (nav) => <Settings navigate={nav} />,
 }
 
