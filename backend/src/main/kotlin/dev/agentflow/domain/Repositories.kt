@@ -30,4 +30,6 @@ interface ProjectRepository : JpaRepository<ProjectEntity, String>
 
 interface MetaRepository : JpaRepository<MetaEntity, String>
 
-interface PrdRepository : JpaRepository<PrdEntity, String>
+interface ProjectDocRepository : JpaRepository<ProjectDocEntity, String> {
+  fun findByProjectIdAndDocType(projectId: String, docType: String): ProjectDocEntity?
+}

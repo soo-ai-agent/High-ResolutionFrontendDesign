@@ -2,7 +2,7 @@ package dev.agentflow.web
 
 import dev.agentflow.dto.*
 import dev.agentflow.service.MirrorService
-import dev.agentflow.service.PrdService
+import dev.agentflow.service.ProjectDocService
 import dev.agentflow.service.ProjectService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -14,7 +14,7 @@ import org.springframework.web.server.ResponseStatusException
 class MirrorController(
   private val mirror: MirrorService,
   private val projects: ProjectService,
-  private val prd: PrdService,
+  private val docs: ProjectDocService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -59,19 +59,20 @@ class MirrorController(
     if (dto.id.isBlank() || dto.name.isBlank())
       throw ResponseStatusException(HttpStatus.BAD_REQUEST, "id·name 이 필요해요.")
     val created = projects.create(dto)
-    // PRD 초안은 백그라운드로 — 에이전트 호출이 길어도 생성 응답을 막지 않는다.
-    Thread.startVirtualThread { runCatching { prd.generate(created.id) } }
+    // 문서 초안(PRD·IA)은 백그라운드로 — 에이전트 호출이 길어도 생성 응답을 막지 않는다.
+    Thread.startVirtualThread { docs.generateAll(created.id) }
     return ResponseEntity.status(HttpStatus.CREATED).body(created)
   }
 
-  // ---- PRD (프로젝트별 기획 문서) ----
-  @GetMapping("/projects/{id}/prd")
-  fun getPrd(@PathVariable id: String): PrdDto =
-    prd.get(id) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "PRD 가 아직 없어요.")
+  // ---- 프로젝트 문서 (PRD·IA 등) ----
+  @GetMapping("/projects/{id}/docs/{type}")
+  fun getDoc(@PathVariable id: String, @PathVariable type: String): ProjectDocDto =
+    docs.get(id, type) ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "문서가 아직 없어요.")
 
-  @PostMapping("/projects/{id}/prd/generate")
-  fun generatePrd(@PathVariable id: String): PrdDto = prd.generate(id)
+  @PostMapping("/projects/{id}/docs/{type}/generate")
+  fun generateDoc(@PathVariable id: String, @PathVariable type: String): ProjectDocDto = docs.generate(id, type)
 
-  @PutMapping("/projects/{id}/prd")
-  fun updatePrd(@PathVariable id: String, @RequestBody req: PrdUpdateRequest): PrdDto = prd.update(id, req)
+  @PutMapping("/projects/{id}/docs/{type}")
+  fun updateDoc(@PathVariable id: String, @PathVariable type: String, @RequestBody req: DocUpdateRequest): ProjectDocDto =
+    docs.update(id, type, req)
 }

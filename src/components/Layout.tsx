@@ -12,6 +12,7 @@ const MENU = [
   ] },
   { group: "기획", items: [
     { key: "prd", label: "PRD", icon: "doc" },
+    { key: "ia", label: "IA·화면설계", icon: "ia" },
   ] },
   { group: "개발", items: [
     { key: "mirror", label: "GitHub 미러", icon: "sync" },

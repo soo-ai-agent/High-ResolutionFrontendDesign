@@ -1,16 +1,23 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
 import type { ProjectItem } from "../data"
-import { getPrd, generatePrd, savePrd, splitPrd, joinPrd, type Prd } from "../lib/prd"
+import { getDoc, generateDoc, saveDoc, splitDoc, joinDoc, type ProjectDoc, type DocType } from "../lib/projectDocs"
 
-const SOURCE_BADGE: Record<Prd["source"], { label: string; tone: "purple" | "neutral" | "blue" }> = {
+const SOURCE_BADGE: Record<ProjectDoc["source"], { label: string; tone: "purple" | "neutral" | "blue" }> = {
   agent: { label: "에이전트 초안", tone: "purple" },
   template: { label: "템플릿 초안", tone: "neutral" },
   human: { label: "사람 수정됨", tone: "blue" },
 }
 
-export default function PrdScreen({ project }: { project: ProjectItem | null }) {
-  const [prd, setPrd] = useState<Prd | null>(null)
+// 문서 타입별 라벨 — 화면 동작은 동일하고 이름만 달라요.
+const DOC_META: Record<DocType, { name: string; genDesc: string }> = {
+  prd: { name: "PRD", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 요구사항 문서 초안을 만들어요." },
+  ia: { name: "IA·화면설계", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 화면 구조(IA)·SCR 목록·화면별 상세 명세 초안을 만들어요." },
+}
+
+export default function ProjectDocScreen({ project, docType }: { project: ProjectItem | null; docType: DocType }) {
+  const meta_ = DOC_META[docType]
+  const [doc, setDoc] = useState<ProjectDoc | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState("")
@@ -22,23 +29,25 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   const [metaEditing, setMetaEditing] = useState(false)
   const [meta, setMeta] = useState({ title: "", client: "", author: "" })
 
-  const blocks = useMemo(() => (prd ? splitPrd(prd.contentMd) : []), [prd])
+  const blocks = useMemo(() => (doc ? splitDoc(doc.contentMd) : []), [doc])
 
   useEffect(() => {
     if (!project) return
     let alive = true
     setLoading(true)
-    getPrd(project.id)
-      .then((p) => { if (alive) setPrd(p) })
+    setDoc(null)
+    setEditingIdx(null)
+    getDoc(project.id, docType)
+      .then((p) => { if (alive) setDoc(p) })
       .catch((e) => { if (alive) setError(e.message) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
-  }, [project])
+  }, [project, docType])
 
   // 스크롤 위치에 따라 목차 활성 항목 갱신
   useEffect(() => {
-    if (!prd || editingIdx !== null) return
-    const els = blocks.map((_, i) => document.getElementById(`prd-sec-${i}`)).filter((el): el is HTMLElement => !!el)
+    if (!doc || editingIdx !== null) return
+    const els = blocks.map((_, i) => document.getElementById(`doc-sec-${i}`)).filter((el): el is HTMLElement => !!el)
     const io = new IntersectionObserver(
       (entries) => {
         const vis = entries.filter((e) => e.isIntersecting).sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top)
@@ -48,36 +57,36 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
     )
     els.forEach((el) => io.observe(el))
     return () => io.disconnect()
-  }, [blocks, editingIdx, prd])
+  }, [blocks, editingIdx, doc])
 
   if (!project) {
     return (
       <div className="space-y-6">
-        <SectionTitle title="PRD" desc="프로젝트 생성 시 에이전트가 초안을 만들고, 관리자가 주제별로 수정해 확정해요." />
-        <EmptyState title="선택된 프로젝트가 없어요." desc="프로젝트 목록에서 프로젝트를 열면 그 프로젝트의 PRD 를 볼 수 있어요." />
+        <SectionTitle title={meta_.name} desc="프로젝트 생성 시 에이전트가 초안을 만들고, 관리자가 주제별로 수정해 확정해요." />
+        <EmptyState title="선택된 프로젝트가 없어요." desc={`프로젝트 목록에서 프로젝트를 열면 그 프로젝트의 ${meta_.name} 를 볼 수 있어요.`} />
       </div>
     )
   }
 
   const regenerate = async () => {
-    if (prd && !window.confirm("현재 내용을 새 초안으로 덮어쓰고 버전을 올려요. 계속할까요?")) return
+    if (doc && !window.confirm("현재 내용을 새 초안으로 덮어쓰고 버전을 올려요. 계속할까요?")) return
     setBusy(true); setError("")
-    try { setPrd(await generatePrd(project.id)); setEditingIdx(null) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+    try { setDoc(await generateDoc(project.id, docType)); setEditingIdx(null) } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
 
   const downloadMd = () => {
-    if (!prd) return
-    const blob = new Blob([prd.contentMd], { type: "text/markdown;charset=utf-8" })
+    if (!doc) return
+    const blob = new Blob([doc.contentMd], { type: "text/markdown;charset=utf-8" })
     const a = document.createElement("a")
     a.href = URL.createObjectURL(blob)
-    a.download = `PRD-${prd.title}.md`
+    a.download = `${meta_.name}-${doc.title}.md`
     a.click()
     URL.revokeObjectURL(a.href)
   }
 
   const jumpTo = (i: number) => {
     setActive(i)
-    document.getElementById(`prd-sec-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
+    document.getElementById(`doc-sec-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
   }
 
   const startEdit = (i: number) => {
@@ -86,11 +95,11 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   }
 
   const saveSection = async () => {
-    if (!prd || editingIdx === null) return
+    if (!doc || editingIdx === null) return
     setBusy(true); setError("")
     try {
       const next = blocks.map((b, i) => (i === editingIdx ? { ...b, md: editText } : b))
-      setPrd(await savePrd(project.id, { contentMd: joinPrd(next) }))
+      setDoc(await saveDoc(project.id, docType, { contentMd: joinDoc(next) }))
       setEditingIdx(null)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -98,7 +107,7 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   const saveMeta = async () => {
     setBusy(true); setError("")
     try {
-      setPrd(await savePrd(project.id, meta))
+      setDoc(await saveDoc(project.id, docType, meta))
       setMetaEditing(false)
     } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
   }
@@ -106,11 +115,11 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
   return (
     <div className="space-y-6">
       <SectionTitle
-        title={`PRD: ${prd?.title ?? project.name}`}
+        title={`${meta_.name}: ${doc?.title ?? project.name}`}
         desc="주제별로 각각 수정할 수 있어요. 저장할 때마다 문서 버전이 올라가고, 전체는 하나의 마크다운으로 내보낼 수 있어요."
-        action={prd ? (
+        action={doc ? (
           <div className="flex items-center gap-2">
-            <Badge tone={SOURCE_BADGE[prd.source].tone}>{SOURCE_BADGE[prd.source].label}</Badge>
+            <Badge tone={SOURCE_BADGE[doc.source].tone}>{SOURCE_BADGE[doc.source].label}</Badge>
             <Button variant="secondary" size="sm" onClick={downloadMd} icon={<Icon name="download" className="h-4 w-4" />}>MD 다운로드</Button>
             <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 생성"}</Button>
           </div>
@@ -120,12 +129,12 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
       {error && <div className="rounded-[12px] bg-error-light px-4 py-3 text-[13px] font-semibold text-error">{error}</div>}
 
       {loading ? (
-        <Card className="p-10 text-center text-[13px] text-text-tertiary">PRD 를 불러오는 중…</Card>
-      ) : !prd ? (
+        <Card className="p-10 text-center text-[13px] text-text-tertiary">문서를 불러오는 중…</Card>
+      ) : !doc ? (
         <EmptyState
-          title="PRD 가 아직 없어요."
-          desc="프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 초안을 만들어요. 서버에 ANTHROPIC_API_KEY 가 있으면 Claude 가, 없으면 구조화된 템플릿이 초안을 작성해요."
-          action={<Button variant="primary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4.5 w-4.5" />}>{busy ? "생성 중…" : "에이전트로 PRD 생성"}</Button>}
+          title={`${meta_.name} 문서가 아직 없어요.`}
+          desc={`${meta_.genDesc} 서버에 ANTHROPIC_API_KEY 가 있으면 Claude 가, 없으면 구조화된 템플릿이 초안을 작성해요.`}
+          action={<Button variant="primary" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4.5 w-4.5" />}>{busy ? "생성 중…" : `에이전트로 ${meta_.name} 생성`}</Button>}
         />
       ) : (
         <div className="grid items-start gap-6 lg:grid-cols-[240px_1fr]">
@@ -154,7 +163,7 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
                     <Button variant="primary" size="sm" onClick={saveMeta} disabled={busy}>{busy ? "저장 중…" : "정보 저장"}</Button>
                   </div>
                 ) : (
-                  <Button variant="tertiary" size="sm" onClick={() => { setMeta({ title: prd.title, client: prd.client, author: prd.author }); setMetaEditing(true) }}>정보 수정</Button>
+                  <Button variant="tertiary" size="sm" onClick={() => { setMeta({ title: doc.title, client: doc.client, author: doc.author }); setMetaEditing(true) }}>정보 수정</Button>
                 )}
               </div>
               {metaEditing ? (
@@ -167,11 +176,11 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
                 <table className="w-full text-[13px]">
                   <tbody>
                     {[
-                      ["의뢰사", prd.client],
-                      ["작성자", prd.author],
-                      ["최초 작성일", prd.createdDate],
-                      ["최종 수정일", prd.updatedDate],
-                      ["문서 버전", prd.docVersion],
+                      ["의뢰사", doc.client],
+                      ["작성자", doc.author],
+                      ["최초 작성일", doc.createdDate],
+                      ["최종 수정일", doc.updatedDate],
+                      ["문서 버전", doc.docVersion],
                     ].map(([k, v]) => (
                       <tr key={k} className="border-b border-line last:border-0">
                         <td className="w-40 bg-surface-2 px-4 py-2.5 font-bold text-text-secondary">{k}</td>
@@ -185,7 +194,7 @@ export default function PrdScreen({ project }: { project: ProjectItem | null }) 
 
             {/* 섹션 카드 — 주제별 개별 수정 */}
             {blocks.map((b, i) => (
-              <div key={`${i}-${b.title}`} id={`prd-sec-${i}`} data-idx={i} className="scroll-mt-4">
+              <div key={`${i}-${b.title}`} id={`doc-sec-${i}`} data-idx={i} className="scroll-mt-4">
               <Card className="relative p-6">
                 {editingIdx === i ? (
                   <div className="space-y-3">

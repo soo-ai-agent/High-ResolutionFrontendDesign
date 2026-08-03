@@ -23,9 +23,10 @@ data class ProjectDto(
   val synced: Boolean = false,
 )
 
-// ---- PRD (프로젝트별 기획 문서) ----
-data class PrdDto(
+// ---- 프로젝트 문서 (PRD·IA 등) ----
+data class ProjectDocDto(
   val projectId: String,
+  val docType: String,
   val title: String,
   val client: String = "내부",
   val author: String = "",
@@ -36,7 +37,7 @@ data class PrdDto(
   val contentMd: String = "",
   val updatedAt: String = "",
 )
-data class PrdUpdateRequest(val title: String?, val client: String?, val author: String?, val contentMd: String?)
+data class DocUpdateRequest(val title: String?, val client: String?, val author: String?, val contentMd: String?)
 
 // ---- GitHub 프록시 요청 ----
 data class ConnectRequest(val token: String?)
