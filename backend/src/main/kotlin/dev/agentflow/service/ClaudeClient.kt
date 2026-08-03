@@ -19,13 +19,15 @@ class ClaudeClient {
 
   val enabled: Boolean get() = apiKey != null
 
-  fun complete(system: String, user: String, maxTokens: Int = 8192): String? {
+  fun complete(system: String, user: String, maxTokens: Int = 16000): String? {
     val key = apiKey ?: return null
     return try {
       val body = Json.mapper.writeValueAsString(
         mapOf(
           "model" to "claude-opus-5",
           "max_tokens" to maxTokens,
+          // 문서 초안엔 medium 이면 충분 — 생성 지연과 사고 토큰을 줄여 타임아웃 폴백을 피한다.
+          "output_config" to mapOf("effort" to "medium"),
           "system" to system,
           "messages" to listOf(mapOf("role" to "user", "content" to user)),
         ),

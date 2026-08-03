@@ -50,7 +50,7 @@ class ProjectDocService(
     // 저장소 코드 수집(URL 또는 org/이름) — 에이전트가 실제 코드를 반영하게 프롬프트에 첨부.
     val code = runCatching { collectCodeContext(project) }.getOrNull()
     val brief = projectBrief(project) + (code?.let { "\n\n[저장소 코드 분석 자료 — 실제 저장소에서 수집됨]\n$it" } ?: "")
-    val content = claude.complete(spec.system, brief, maxTokens = 12000)
+    val content = claude.complete(spec.system, brief, maxTokens = 16000)
     val today = LocalDate.now().toString()
     val e = existing ?: ProjectDocEntity(id = "$projectId:$docType", projectId = projectId, docType = docType, createdDate = today)
     e.title = project.name
