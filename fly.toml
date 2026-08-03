@@ -1,6 +1,6 @@
 # Fly.io 배포 설정 — Agent Flow (정적 dist + 무의존성 API 서버)
 # 앱 이름은 전역 고유해야 해요. 아래 값을 바꾸거나 `fly launch`가 채우게 하세요.
-app = "agent-flow"
+app = "agent-flow-hrfd"
 primary_region = "nrt" # 도쿄(한국에서 저지연). 원하는 리전으로 변경.
 
 [build]

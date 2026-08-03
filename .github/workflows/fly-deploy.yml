@@ -1,0 +1,70 @@
+# Fly.io 배포 + 에이전트 실작성 스모크 테스트.
+# 수동 실행(workflow_dispatch) 전용 — 배포는 의도적으로만.
+#
+# 필요한 GitHub Actions 시크릿 (Settings → Secrets and variables → Actions):
+#   FLY_API_TOKEN   : Fly.io 배포 토큰 (fly.io 대시보드 → Tokens, 또는 `fly tokens create deploy`)
+#   OPENAI_API_KEY  : 에이전트 문서/작업 생성용 (또는 ANTHROPIC_API_KEY 시크릿을 쓰면 Claude 우선)
+# 선택:
+#   ANTHROPIC_API_KEY, GH_WEBHOOK_SECRET
+name: Deploy to Fly.io
+on:
+  workflow_dispatch:
+
+env:
+  APP_NAME: agent-flow-hrfd # fly.toml 의 app 과 동일해야 해요
+  FLY_REGION: nrt
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    concurrency: fly-deploy
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure app + volume exist (idempotent)
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl apps create "$APP_NAME" --org personal || echo "app exists"
+          flyctl volumes create data --app "$APP_NAME" --region "$FLY_REGION" --size 1 --yes || echo "volume exists"
+
+      - name: Set runtime secrets
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          ARGS=""
+          [ -n "${{ secrets.OPENAI_API_KEY }}" ] && ARGS="$ARGS OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}"
+          [ -n "${{ secrets.ANTHROPIC_API_KEY }}" ] && ARGS="$ARGS ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}"
+          [ -n "${{ secrets.GH_WEBHOOK_SECRET }}" ] && ARGS="$ARGS GITHUB_WEBHOOK_SECRET=${{ secrets.GH_WEBHOOK_SECRET }}"
+          if [ -n "$ARGS" ]; then flyctl secrets set --app "$APP_NAME" --stage $ARGS; else echo "설정할 시크릿 없음"; fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app "$APP_NAME" --remote-only --wait-timeout 300
+
+      # 배포 직후, 실제 서버에서 에이전트가 문서를 "실작성"하는지 검증.
+      # 키가 없으면 source=template 로 저장되므로 source=agent 단언이 곧 실작성 증거예요.
+      - name: Smoke test — agent actually writes the PRD
+        run: |
+          BASE="https://${APP_NAME}.fly.dev"
+          echo "health check: $BASE"
+          for i in $(seq 1 30); do curl -sf "$BASE/api/health" && break; sleep 5; done
+
+          PID="p-deploy-check-${{ github.run_number }}"
+          curl -sf -X POST "$BASE/api/mirror/projects" -H 'Content-Type: application/json' \
+            -d "{\"id\":\"$PID\",\"name\":\"배포 검증 ${{ github.run_number }}\",\"org\":\"sample-org\",\"desc\":\"에이전트 실작성 검증용 프로젝트\",\"stage\":\"계획\",\"repos\":[{\"name\":\"web\",\"purpose\":\"프론트엔드\"}],\"updated\":\"방금\"}" > /dev/null
+
+          echo "PRD 생성 호출 (에이전트 경로, 수 분 걸릴 수 있음)…"
+          curl -s -X POST "$BASE/api/mirror/projects/$PID/docs/prd/generate" --max-time 280 -o prd.json
+          python3 - <<'EOF'
+          import json
+          d = json.load(open("prd.json"))
+          print("source:", d["source"], "| author:", d["author"], "| version:", d["docVersion"], "| length:", len(d["contentMd"]))
+          print("--- 본문 앞부분 ---")
+          print(d["contentMd"][:800])
+          assert d["source"] == "agent", f"에이전트 실작성 실패 — source={d['source']} (키/크레딧 확인 필요)"
+          EOF
+          echo "✅ 에이전트 실작성 확인 완료: $BASE"
