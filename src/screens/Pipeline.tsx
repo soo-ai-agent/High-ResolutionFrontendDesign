@@ -1,5 +1,7 @@
+import { useEffect, useState } from "react"
 import { Icon, Badge, Card, SectionTitle } from "../components/ui"
-import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage } from "../data"
+import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage, type ProjectItem } from "../data"
+import { getProjectActivity, type ProjectActivity } from "../lib/tasks"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -28,7 +30,7 @@ const LIVE_BACKBONE = [
   "PAT 연결(서버 보관) · 배포 준비(Dockerfile · fly.toml)",
 ]
 
-export default function Pipeline({ navigate }: { navigate: (r: string) => void }) {
+export default function Pipeline({ navigate, project }: { navigate: (r: string) => void; project?: ProjectItem | null }) {
   const counts = PIPELINE_STAGES.reduce((a, s) => ({ ...a, [s.real]: (a[s.real] ?? 0) + 1 }), {} as Record<string, number>)
   return (
     <div className="space-y-6">
@@ -36,6 +38,9 @@ export default function Pipeline({ navigate }: { navigate: (r: string) => void }
         title="진행 흐름"
         desc="프로젝트가 생성되면 아래 순서로 진행돼요. 에이전트 · GitHub Actions · 사람이 각 단계에서 맡은 일을 이어받아요."
       />
+
+      {/* 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 라이브 타임라인 */}
+      <AgentActivityFeed project={project} />
 
       {/* 지금 실제로 동작하는 기반(backbone) */}
       <Card className="border-success/30 bg-success-light/20 p-5">
@@ -133,6 +138,103 @@ export default function Pipeline({ navigate }: { navigate: (r: string) => void }
         </div>
       </Card>
     </div>
+  )
+}
+
+// ===== 에이전트 활동 피드 — 10초 폴링으로 전체 태스크 활동·Actions 실행·웹훅 이벤트를 합쳐 보여줘요 =====
+
+const FEED_META: Record<ProjectActivity["type"], { icon: string; cls: string; label: string }> = {
+  task: { icon: "sparkle", cls: "bg-purple-light text-purple", label: "작업" },
+  run: { icon: "runs", cls: "bg-success-light text-success", label: "Actions" },
+  event: { icon: "sync", cls: "bg-blue-light text-blue", label: "이벤트" },
+}
+
+const relTime = (iso: string) => {
+  const d = Date.now() - new Date(iso).getTime()
+  if (Number.isNaN(d)) return ""
+  const m = Math.floor(d / 60000)
+  if (m < 1) return "방금"
+  if (m < 60) return `${m}분 전`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}시간 전`
+  return `${Math.floor(h / 24)}일 전`
+}
+
+function AgentActivityFeed({ project }: { project?: ProjectItem | null }) {
+  const [items, setItems] = useState<ProjectActivity[]>([])
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    const tick = () =>
+      getProjectActivity(project.id)
+        .then((xs) => { if (alive) { setItems(xs); setUpdatedAt(new Date()) } })
+        .catch(() => {})
+    tick()
+    const iv = setInterval(tick, 10_000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [project])
+
+  if (!project) return null
+  const shown = expanded ? items : items.slice(0, 8)
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="relative flex h-2.5 w-2.5">
+          <span className="af-spin absolute inline-flex h-full w-full rounded-full bg-blue opacity-30" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-blue" />
+        </span>
+        <span className="text-[15px] font-bold text-text-primary">에이전트 활동 피드</span>
+        <Badge tone="blue">{project.name}</Badge>
+        <span className="ml-auto text-[11px] text-text-tertiary">
+          10초마다 갱신{updatedAt ? ` · 마지막 ${updatedAt.toLocaleTimeString("ko-KR")}` : ""}
+        </span>
+      </div>
+
+      {items.length === 0 ? (
+        <div className="mt-3 rounded-[10px] bg-surface-2 px-4 py-3 text-[13px] text-text-secondary">
+          아직 활동이 없어요 — 작업을 착수하면 태스크 활동·Actions 실행·웹훅 이벤트가 여기로 실시간으로 모여요.
+        </div>
+      ) : (
+        <>
+          <div className="mt-3 divide-y divide-line">
+            {shown.map((a, i) => {
+              const m = FEED_META[a.type]
+              const fail = a.type === "run" && a.kind === "failure"
+              return (
+                <div key={`${a.at}-${i}`} className="flex items-start gap-2.5 py-2">
+                  <span className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-[8px] ${fail ? "bg-error-light text-error" : m.cls}`}>
+                    <Icon name={m.icon} className="h-3.5 w-3.5" />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Badge tone={fail ? "error" : a.type === "task" ? "purple" : a.type === "run" ? "success" : "blue"}>{a.kind}</Badge>
+                      <span className="truncate text-[13px] font-semibold text-text-primary">{a.title}</span>
+                      {a.url && (
+                        <a href={a.url} target="_blank" rel="noreferrer" className="inline-flex items-center text-blue hover:underline" aria-label="열기">
+                          <Icon name="external" className="h-3.5 w-3.5" />
+                        </a>
+                      )}
+                    </div>
+                    <div className="truncate text-[12px] text-text-secondary">{a.note}</div>
+                  </div>
+                  <span className="shrink-0 text-[11px] text-text-tertiary">{relTime(a.at)}</span>
+                </div>
+              )
+            })}
+          </div>
+          {items.length > 8 && (
+            <button onClick={() => setExpanded((e) => !e)}
+              className="mt-2 w-full rounded-[8px] bg-surface-2 py-1.5 text-[12px] font-semibold text-text-secondary hover:bg-hover">
+              {expanded ? "접기" : `전체 ${items.length}건 보기`}
+            </button>
+          )}
+        </>
+      )}
+    </Card>
   )
 }
 

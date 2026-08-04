@@ -2,6 +2,7 @@ package dev.agentflow.web
 
 import dev.agentflow.dto.*
 import dev.agentflow.service.MirrorService
+import dev.agentflow.service.ProjectActivityService
 import dev.agentflow.service.ProjectDocService
 import dev.agentflow.service.ProjectService
 import dev.agentflow.service.TaskService
@@ -17,6 +18,7 @@ class MirrorController(
   private val projects: ProjectService,
   private val docs: ProjectDocService,
   private val taskService: TaskService,
+  private val activity: ProjectActivityService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -103,6 +105,11 @@ class MirrorController(
 
   @PostMapping("/projects/{id}/dispatch/run")
   fun runDispatch(@PathVariable id: String): DispatchStatusDto = taskService.runDispatch(id, force = true)
+
+  // 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인.
+  @GetMapping("/projects/{id}/activity")
+  fun projectActivity(@PathVariable id: String, @RequestParam(defaultValue = "50") limit: Int): List<ProjectActivityDto> =
+    activity.feed(id, limit.coerceIn(1, 200))
 
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =

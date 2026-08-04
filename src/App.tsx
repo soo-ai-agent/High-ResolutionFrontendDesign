@@ -12,7 +12,7 @@ import type { ProjectItem } from "./data"
 
 // MVP 6화면: 로그인 · 프로젝트 · 진행 흐름 · GitHub 미러 · Projects 보드 · 휴먼태스크 · 설정(연동)
 const SCREENS: Record<string, (nav: (r: string) => void, project: ProjectItem | null) => ReactElement> = {
-  pipeline: (nav) => <Pipeline navigate={nav} />,
+  pipeline: (nav, project) => <Pipeline navigate={nav} project={project} />,
   prd: (_nav, project) => <ProjectDocScreen project={project} docType="prd" />,
   ia: (_nav, project) => <ProjectDocScreen project={project} docType="ia" />,
   tasks: (_nav, project) => <TasksScreen project={project} />,

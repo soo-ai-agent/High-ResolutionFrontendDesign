@@ -37,6 +37,16 @@ data class DispatchStatusDto(
 )
 data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
 
+// ---- 프로젝트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인 ----
+data class ProjectActivityDto(
+  val at: String,
+  val type: String, // task | run | event
+  val kind: String, // 착수/검토 대기/… | success/failure/in_progress | issues:closed …
+  val title: String,
+  val note: String,
+  val url: String? = null,
+)
+
 // ---- 프로젝트 문서 (PRD·IA 등) ----
 data class ProjectDocDto(
   val projectId: String,

@@ -83,6 +83,19 @@ export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?:
 export const runDispatchNow = (projectId: string) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch/run`, { method: "POST" })
 
+// ---- 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인 ----
+export type ProjectActivity = {
+  at: string
+  type: "task" | "run" | "event"
+  kind: string
+  title: string
+  note: string
+  url: string | null
+}
+
+export const getProjectActivity = (projectId: string, limit = 50) =>
+  j<ProjectActivity[]>(`/api/mirror/projects/${projectId}/activity?limit=${limit}`)
+
 // ---- 진행·결과 (활동 이력 + 연결 이슈·PR) ----
 export type TaskActivity = { at: string; kind: string; note: string }
 export type TaskPull = { number: number; title: string; state: string | null; merged: boolean; url: string | null }
