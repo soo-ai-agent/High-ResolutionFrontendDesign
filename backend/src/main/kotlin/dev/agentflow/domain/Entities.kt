@@ -59,6 +59,10 @@ class RunEntity(
   var headBranch: String? = null,
   @Column(length = 512) var htmlUrl: String? = null,
   var updatedAt: String? = null,
+  // workflow_run 웹훅의 연결 PR 번호(쉼표 구분) — 실패 실행을 담당 작업에 매칭할 때 써요.
+  @Column(length = 200) var prNumbers: String? = null,
+  // CI 실패 자동 회복이 이미 @claude 지시를 보냈는지 — 같은 실행에 중복 지시를 막아요.
+  @ColumnDefault("false") var recoveryNotified: Boolean = false,
 )
 
 @Entity

@@ -37,6 +37,20 @@ data class DispatchStatusDto(
 )
 data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
 
+// ---- CI 실패 자동 회복 ----
+data class CiRecoveryItemDto(
+  val taskCode: String,
+  val runName: String,
+  val runUrl: String?,
+  val prNumber: Long?, // 지시를 남긴 곳 — PR 이면 번호, 아니면 null(이슈에 남김)
+  val issueNumber: Long?,
+)
+data class CiRecoveryResultDto(
+  val notified: List<CiRecoveryItemDto>, // 이번 스윕에서 @claude 지시를 보낸 실행
+  val pending: Int, // 매칭 실패·지시 실패로 보류된 실행 수 (다음 스윕에 재시도)
+  val message: String? = null,
+)
+
 // ---- 프로젝트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인 ----
 data class ProjectActivityDto(
   val at: String,

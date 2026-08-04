@@ -1,6 +1,7 @@
 package dev.agentflow.web
 
 import dev.agentflow.dto.*
+import dev.agentflow.service.CiRecoveryService
 import dev.agentflow.service.MirrorService
 import dev.agentflow.service.ProjectActivityService
 import dev.agentflow.service.ProjectDocService
@@ -19,6 +20,7 @@ class MirrorController(
   private val docs: ProjectDocService,
   private val taskService: TaskService,
   private val activity: ProjectActivityService,
+  private val ciRecovery: CiRecoveryService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -110,6 +112,10 @@ class MirrorController(
   @GetMapping("/projects/{id}/activity")
   fun projectActivity(@PathVariable id: String, @RequestParam(defaultValue = "50") limit: Int): List<ProjectActivityDto> =
     activity.feed(id, limit.coerceIn(1, 200))
+
+  // CI 실패 자동 회복 수동 실행 — 스케줄러(30초)와 같은 스윕을 즉시 돌려요.
+  @PostMapping("/projects/{id}/ci-recovery/run")
+  fun runCiRecovery(@PathVariable id: String): CiRecoveryResultDto = ciRecovery.sweep(id)
 
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =

@@ -51,11 +51,12 @@ class MirrorService(
     pulls.save(e); touch()
   }
 
-  fun upsertRun(repo: String, runId: Long, name: String?, status: String?, conclusion: String?, headBranch: String?, htmlUrl: String?, updatedAt: String?) {
+  fun upsertRun(repo: String, runId: Long, name: String?, status: String?, conclusion: String?, headBranch: String?, htmlUrl: String?, updatedAt: String?, prNumbers: String? = null) {
     val k = keyN(repo, runId)
     val e = runs.findById(k).orElse(RunEntity(id = k))
     e.repo = repo; e.runId = runId; e.name = name; e.status = status
     e.conclusion = conclusion; e.headBranch = headBranch; e.htmlUrl = htmlUrl; e.updatedAt = updatedAt
+    if (prNumbers != null) e.prNumbers = prNumbers
     runs.save(e); touch()
   }
 
@@ -135,7 +136,9 @@ class MirrorService(
       }
       event == "workflow_run" && payload.has("workflow_run") -> {
         val w = payload.path("workflow_run")
-        upsertRun(repoFull ?: "", w.path("id").asLong(), w.str("name"), w.str("status"), w.str("conclusion"), w.str("head_branch"), w.str("html_url"), w.str("updated_at"))
+        val prs = w.path("pull_requests").mapNotNull { it.path("number").asLong().takeIf { n -> n > 0 } }
+          .joinToString(",").ifBlank { null }
+        upsertRun(repoFull ?: "", w.path("id").asLong(), w.str("name"), w.str("status"), w.str("conclusion"), w.str("head_branch"), w.str("html_url"), w.str("updated_at"), prs)
         summary = "run ${w.str("name")} ${w.str("status")}" + (w.str("conclusion")?.let { " · $it" } ?: "")
       }
       event == "push" -> {
