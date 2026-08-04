@@ -21,7 +21,21 @@ data class ProjectDto(
   val fails: Int = 0,
   val updated: String = "",
   val synced: Boolean = false,
+  val autoDispatch: Boolean = false,
+  val dispatchLimit: Int = 2,
 )
+
+// ---- 자동 디스패치 (우선순위·단계 순서 기반 자동 착수) ----
+data class DispatchStatusDto(
+  val enabled: Boolean,
+  val limit: Int,
+  val activePhase: String?, // 디스패치 대상 단계 — 단계 순서상 첫 미완료 단계
+  val active: Int, // 진행 중 ai 작업 수
+  val waiting: Int, // 대상 단계의 대기 중 ai 작업 수
+  val started: List<TaskDto> = emptyList(), // 이번 실행에서 착수된 작업
+  val message: String? = null,
+)
+data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
 
 // ---- 프로젝트 문서 (PRD·IA 등) ----
 data class ProjectDocDto(

@@ -28,7 +28,7 @@ class ProjectService(
   fun list(): List<ProjectDto> = projects.findAll().map { it.toDto() }
 
   fun create(dto: ProjectDto): ProjectDto {
-    val e = ProjectEntity(dto.id, dto.name, dto.org, dto.desc, dto.stage, dto.progress, dto.repos, dto.tasks, dto.prs, dto.fails, dto.updated, dto.synced)
+    val e = ProjectEntity(dto.id, dto.name, dto.org, dto.desc, dto.stage, dto.progress, dto.repos, dto.tasks, dto.prs, dto.fails, dto.updated, dto.synced, dto.autoDispatch, dto.dispatchLimit)
     return projects.save(e).toDto()
   }
 
@@ -55,7 +55,7 @@ class ProjectService(
     val derivedUpdated = ts.mapNotNull { runCatching { Instant.parse(it.updatedAt) }.getOrNull() }
       .maxOrNull()?.let(::relative) ?: updated
 
-    return ProjectDto(id, name, org, desc, derivedStage, derivedProgress, repos, total - done, openPrs, failRuns, derivedUpdated, synced || mirrored)
+    return ProjectDto(id, name, org, desc, derivedStage, derivedProgress, repos, total - done, openPrs, failRuns, derivedUpdated, synced || mirrored, autoDispatch, dispatchLimit)
   }
 
   private fun relative(at: Instant): String {

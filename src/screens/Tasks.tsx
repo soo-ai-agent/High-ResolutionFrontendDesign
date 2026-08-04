@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
-import { Icon, Button, Badge, Card, SectionTitle, EmptyState, RoleChip } from "../components/ui"
+import { Icon, Button, Badge, Card, SectionTitle, EmptyState, RoleChip, Toggle } from "../components/ui"
 import { BUILD_PHASES, type ProjectItem } from "../data"
-import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, kickoffTask, getTaskInsight, reviewTask, type Task, type TaskPatch, type TaskInsight } from "../lib/tasks"
+import { listTasks, generateTasks, patchTask, deleteTask, syncTaskIssue, kickoffTask, getTaskInsight, reviewTask, getDispatch, setDispatch, runDispatchNow, type Task, type TaskPatch, type TaskInsight, type DispatchStatus } from "../lib/tasks"
 
 const STATUS_TONE: Record<string, "success" | "blue" | "warning" | "purple"> = { "완료": "success", "진행 중": "blue", "대기": "warning", "검토 대기": "purple" }
 const OWNERS: Task["owner"][] = ["ai", "human", "auto"]
@@ -18,6 +18,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
   const [draft, setDraft] = useState<TaskPatch>({})
   const [insight, setInsight] = useState<TaskInsight | null>(null)
   const [feedback, setFeedback] = useState("")
+  const [dispatch, setDispatchState] = useState<DispatchStatus | null>(null)
 
   const sel = tasks.find((t) => t.id === selId) ?? null
 
@@ -34,6 +35,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     load(project.id)
       .catch((e) => { if (alive) setError(e.message) })
       .finally(() => { if (alive) setLoading(false) })
+    getDispatch(project.id).then((d) => { if (alive) setDispatchState(d) }).catch(() => {})
     return () => { alive = false }
   }, [project])
 
@@ -110,6 +112,15 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     setInsight(await getTaskInsight(project.id, sel.id))
   })
 
+  // 디스패치 조작 — 설정·실행 응답으로 상태를 갱신하고, 착수가 일어났으면 목록도 다시 불러요.
+  const applyDispatch = async (st: DispatchStatus) => {
+    setDispatchState(st)
+    if (st.started.length > 0) await load(project.id)
+  }
+  const toggleDispatch = () => run(async () => applyDispatch(await setDispatch(project.id, { enabled: !(dispatch?.enabled ?? false) })))
+  const changeLimit = (n: number) => run(async () => applyDispatch(await setDispatch(project.id, { limit: n })))
+  const dispatchNow = () => run(async () => applyDispatch(await runDispatchNow(project.id)))
+
   const review = (action: "approve" | "feedback") => run(async () => {
     if (!sel) return
     const updated = await reviewTask(project.id, sel.id, action, action === "feedback" ? feedback : undefined)
@@ -156,6 +167,41 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
             <span className="mx-1 text-line-strong">·</span>
             <span>GitHub 이슈 동기화 <b className="text-text-primary">{counts.synced}</b></span>
           </div>
+
+          {/* 자동 디스패치 — 단계 순서·우선순위대로 동시 실행 한도 안에서 ai 작업 자동 착수 */}
+          <Card className="p-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <div className="flex items-center gap-2">
+                <Icon name="bolt" className="h-4 w-4 text-blue" />
+                <span className="text-[13px] font-bold text-text-primary">자동 디스패치</span>
+                <Toggle on={dispatch?.enabled ?? false} onChange={toggleDispatch} />
+              </div>
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary">
+                동시 실행
+                <select value={dispatch?.limit ?? 2} onChange={(e) => changeLimit(Number(e.target.value))}
+                  className="h-8 rounded-[8px] border border-line bg-surface px-1.5 text-[12px] outline-none focus:border-blue">
+                  {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </label>
+              {dispatch && (
+                <span className="text-[12px] text-text-secondary">
+                  현재 단계 <b className="text-text-primary">{dispatch.activePhase ?? "—"}</b>
+                  <span className="mx-1 text-line-strong">·</span>
+                  진행 중 <b className="text-blue">{dispatch.active}/{dispatch.limit}</b>
+                  <span className="mx-1 text-line-strong">·</span>
+                  대기 <b className="text-text-primary">{dispatch.waiting}</b>
+                </span>
+              )}
+              <div className="ml-auto">
+                <Button variant="secondary" size="sm" onClick={dispatchNow} disabled={busy} icon={<Icon name="play" className="h-4 w-4" />}>지금 실행</Button>
+              </div>
+            </div>
+            <p className="mt-2 text-[11px] leading-relaxed text-text-tertiary">
+              켜 두면 30초마다 현재 단계의 대기 중 AI 작업을 우선순위(P1→P3) 순으로, 동시 실행 한도 안에서 자동 착수해요(이슈 생성 + @claude 지시).
+              앞 단계 작업이 모두 완료돼야 다음 단계로 넘어가요.
+            </p>
+            {dispatch?.message && <div className="mt-2 rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] font-medium text-text-secondary">{dispatch.message}</div>}
+          </Card>
 
           <div className="grid items-start gap-4 lg:grid-cols-[400px_1fr]">
             {/* 왼쪽: 단계별 작업 목록 */}

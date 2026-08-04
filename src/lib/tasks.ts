@@ -59,6 +59,30 @@ export const syncTaskIssue = (projectId: string, taskId: string) =>
 export const kickoffTask = (projectId: string, taskId: string) =>
   j<Task>(`/api/mirror/projects/${projectId}/tasks/${taskId}/kickoff`, { method: "POST" })
 
+// ---- 자동 디스패치 — 단계 순서·우선순위 기반, 동시 실행 제한 안에서 ai 작업 자동 착수 ----
+export type DispatchStatus = {
+  enabled: boolean
+  limit: number
+  activePhase: string | null
+  active: number
+  waiting: number
+  started: Task[]
+  message: string | null
+}
+
+export const getDispatch = (projectId: string) =>
+  j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`)
+
+export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?: number }) =>
+  j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cfg),
+  })
+
+export const runDispatchNow = (projectId: string) =>
+  j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch/run`, { method: "POST" })
+
 // ---- 진행·결과 (활동 이력 + 연결 이슈·PR) ----
 export type TaskActivity = { at: string; kind: string; note: string }
 export type TaskPull = { number: number; title: string; state: string | null; merged: boolean; url: string | null }

@@ -93,6 +93,17 @@ class MirrorController(
   @PostMapping("/projects/{id}/tasks/{taskId}/kickoff")
   fun kickoffTask(@PathVariable id: String, @PathVariable taskId: String): TaskDto = taskService.kickoff(id, taskId)
 
+  // ---- 자동 디스패치 — 단계 순서·우선순위 기반, 동시 실행 제한 안에서 ai 작업 자동 착수 ----
+  @GetMapping("/projects/{id}/dispatch")
+  fun dispatchStatus(@PathVariable id: String): DispatchStatusDto = taskService.dispatchStatus(id)
+
+  @PutMapping("/projects/{id}/dispatch")
+  fun setDispatch(@PathVariable id: String, @RequestBody req: DispatchConfigRequest): DispatchStatusDto =
+    taskService.setDispatchConfig(id, req)
+
+  @PostMapping("/projects/{id}/dispatch/run")
+  fun runDispatch(@PathVariable id: String): DispatchStatusDto = taskService.runDispatch(id, force = true)
+
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =
     taskService.review(id, taskId, req)

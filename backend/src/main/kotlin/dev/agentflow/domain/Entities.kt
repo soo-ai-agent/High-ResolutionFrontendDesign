@@ -7,6 +7,7 @@ import jakarta.persistence.Entity
 import jakarta.persistence.GeneratedValue
 import jakarta.persistence.GenerationType
 import jakarta.persistence.Id
+import org.hibernate.annotations.ColumnDefault
 
 // GitHub 필드는 미러(RO), 어드민 확장(stage·priority·mapping·boardStatus)은 어드민 소유.
 // 길이 지정으로 VARCHAR(255) 기본 절단을 피하고 H2/Postgres 공통 동작.
@@ -105,6 +106,10 @@ class ProjectEntity(
   var fails: Int = 0,
   var updated: String = "",
   var synced: Boolean = false,
+  // 자동 디스패치 — 켜져 있으면 현재 단계의 대기 중 ai 작업을 우선순위 순으로,
+  // 동시 실행(dispatchLimit)만큼 자동 착수해요. 기본값은 기존 행 마이그레이션(ddl update)에도 쓰여요.
+  @ColumnDefault("false") var autoDispatch: Boolean = false,
+  @ColumnDefault("2") var dispatchLimit: Int = 2,
 )
 
 // 단일 행 메타 — 미러 마지막 갱신 시각(summary.updatedAt).

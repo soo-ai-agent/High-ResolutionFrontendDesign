@@ -9,6 +9,8 @@ import dev.agentflow.domain.TaskActivityEntity
 import dev.agentflow.domain.TaskActivityRepository
 import dev.agentflow.domain.TaskEntity
 import dev.agentflow.domain.TaskRepository
+import dev.agentflow.dto.DispatchConfigRequest
+import dev.agentflow.dto.DispatchStatusDto
 import dev.agentflow.dto.IssueCreateRequest
 import dev.agentflow.dto.TaskActivityDto
 import dev.agentflow.dto.TaskDto
@@ -116,13 +118,96 @@ class TaskService(
       "완료" -> throw ResponseStatusException(HttpStatus.CONFLICT, "이미 완료된 작업이에요.")
       "검토 대기" -> throw ResponseStatusException(HttpStatus.CONFLICT, "검토 대기 중이에요 — 보완이 필요하면 피드백으로 재개하세요.")
     }
-    val (project, owner, name) = coordsOf(projectId, t)
+    val (project, _, _) = coordsOf(projectId, t)
+    startTask(project, t, auto = false)
+    return t.toDto()
+  }
+
+  // ---- 자동 디스패치 — 단계 순서(스키마→…→릴리즈) 안에서 우선순위(P1→P3)·seq 순으로,
+  // 진행 중 ai 작업이 dispatchLimit 미만일 때만 대기 작업을 자동 착수해요. ----
+
+  fun dispatchStatus(projectId: String): DispatchStatusDto {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    val all = tasks.findByProjectIdOrderBySeq(projectId).map { reconcile(project, it) }
+    return statusOf(project, all)
+  }
+
+  fun setDispatchConfig(projectId: String, req: DispatchConfigRequest): DispatchStatusDto {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    req.enabled?.let { project.autoDispatch = it }
+    req.limit?.let { project.dispatchLimit = it.coerceIn(1, 5) }
+    projects.save(project)
+    // 켜는 즉시 한 번 실행 — 슬롯이 비어 있으면 바로 착수돼요.
+    return if (project.autoDispatch) runDispatch(projectId) else dispatchStatus(projectId)
+  }
+
+  // force=true 는 수동 "지금 실행" — 자동 디스패치가 꺼져 있어도 한 번 실행해요.
+  fun runDispatch(projectId: String, force: Boolean = false): DispatchStatusDto {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    val all = tasks.findByProjectIdOrderBySeq(projectId).map { reconcile(project, it) }
+    if (!project.autoDispatch && !force)
+      return statusOf(project, all, message = "자동 디스패치가 꺼져 있어요 — 켜거나 '지금 실행'을 누르세요.")
+    val phase = activePhaseOf(all)
+    val slots = (project.dispatchLimit - all.count { it.owner == "ai" && it.status == "진행 중" }).coerceAtLeast(0)
+    val candidates = all
+      .filter { it.owner == "ai" && it.status == "대기" && phaseRank(it.phase) == phaseRank(phase ?: "") }
+      .sortedWith(compareBy({ priorityRank(it.priority) }, { it.seq }))
+    val started = mutableListOf<TaskEntity>()
+    var failMsg: String? = null
+    for (t in candidates.take(slots)) {
+      try {
+        startTask(project, t, auto = true)
+        started += t
+      } catch (e: ResponseStatusException) {
+        failMsg = "착수 실패 (${t.code}): ${e.reason ?: e.message}"
+        break // PAT 미연결 등 시스템 원인일 가능성이 높아 이번 회차는 중단 — 다음 주기에 재시도.
+      }
+    }
+    val msg = failMsg ?: when {
+      started.isNotEmpty() -> "${started.joinToString(", ") { it.code }} 착수했어요."
+      phase == null -> "모든 작업이 완료됐어요."
+      candidates.isEmpty() && slots > 0 -> "현재 단계($phase)에 착수할 대기 ai 작업이 없어요 — 사람·자동 몫이 끝나면 다음 단계로 넘어가요."
+      slots == 0 -> "동시 실행 한도(${project.dispatchLimit})가 가득 찼어요 — 슬롯이 비면 자동으로 이어가요."
+      else -> null
+    }
+    return statusOf(project, all, started.map { it.toDto() }, msg)
+  }
+
+  private fun statusOf(project: ProjectEntity, all: List<TaskEntity>, started: List<TaskDto> = emptyList(), message: String? = null): DispatchStatusDto {
+    val phase = activePhaseOf(all)
+    return DispatchStatusDto(
+      enabled = project.autoDispatch,
+      limit = project.dispatchLimit,
+      activePhase = phase,
+      active = all.count { it.owner == "ai" && it.status == "진행 중" },
+      waiting = all.count { it.owner == "ai" && it.status == "대기" && phaseRank(it.phase) == phaseRank(phase ?: "") },
+      started = started,
+      message = message,
+    )
+  }
+
+  // 디스패치 대상 단계 = 단계 순서상 첫 미완료 작업이 있는 단계. 앞 단계가 모두 완료돼야 다음 단계로.
+  private fun activePhaseOf(all: List<TaskEntity>): String? =
+    all.filter { it.status != "완료" }.minByOrNull { phaseRank(it.phase) }?.phase
+
+  private fun phaseRank(p: String): Int = PHASE_ORDER.indexOf(p).let { if (it < 0) PHASE_ORDER.size else it }
+
+  private fun priorityRank(p: String): Int = when (p) { "P1" -> 0; "P2" -> 1; "P3" -> 2; else -> 3 }
+
+  // 착수 공통 경로 — 이슈 보장 + @claude 지시 + 진행 중 전환. kickoff(수동)과 디스패치(자동)가 함께 써요.
+  private fun startTask(project: ProjectEntity, t: TaskEntity, auto: Boolean) {
+    val repo = project.repos.firstOrNull { it.name == t.repo }
+      ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "태스크의 담당 저장소(${t.repo})가 프로젝트에 없어요.")
+    val (owner, name) = RepoCoords.of(project.org, repo)
     if (t.issueNumber == null) createAndLinkIssue(project, t, owner, name)
     gitHub.claudeComment(owner, name, t.issueNumber!!, kickoffPrompt(project, t))
     t.status = "진행 중"
     t.updatedAt = Instant.now().toString()
-    record(t.id, "착수", "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
-    return tasks.save(t).toDto()
+    record(t.id, "착수", (if (auto) "자동 디스패치 — " else "") + "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
+    tasks.save(t)
   }
 
   private fun coordsOf(projectId: String, t: TaskEntity): Triple<ProjectEntity, String, String> {
@@ -342,6 +427,9 @@ class TaskService(
     TaskDto(id, projectId, seq, code, title, detail, domain, phase, repo, owner, priority, estimate, status, issueNumber, issueUrl, source, updatedAt)
 
   companion object {
+    // 디스패치 단계 순서 — 프론트 BUILD_PHASES 와 동일. 목록에 없는 단계는 마지막으로.
+    private val PHASE_ORDER = listOf("스키마", "프론트엔드", "백엔드", "외부 키 발급", "QA", "릴리즈")
+
     private val TASKS_SYSTEM = """
       당신은 시니어 테크리드입니다. 프로젝트 정보와 PRD·IA 발췌를 근거로 구현 작업을 분해하세요.
       JSON 배열만 출력하세요(설명·코드펜스 금지). 각 원소:
