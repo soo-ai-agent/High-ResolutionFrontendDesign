@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Icon, Badge, Button, Card, SectionTitle } from "../components/ui"
 import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage, type ProjectItem } from "../data"
-import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, getProjectGantt, type ProjectActivity, type RepoWorkflows, type GanttRow } from "../lib/tasks"
+import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, getProjectGantt, getProjectRuns, type ProjectActivity, type RepoWorkflows, type GanttRow, type ActionRun } from "../lib/tasks"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -357,6 +357,14 @@ function GanttCard({ project }: { project?: ProjectItem | null }) {
 
 // ===== 외부 워크플로 실행 — 저장소별 워크플로를 골라 workflow_dispatch 로 원격 실행해요 =====
 
+// 실행 상태 배지 — 실행 중(파랑) / 성공(초록) / 실패(빨강) / 그 외(회색)
+function runBadge(r: ActionRun): { label: string; tone: "blue" | "success" | "error" | "neutral" } {
+  if (r.status !== "completed" && r.conclusion == null) return { label: r.status === "queued" ? "대기열" : "실행 중", tone: "blue" }
+  if (r.conclusion === "success") return { label: "성공", tone: "success" }
+  if (r.conclusion === "failure") return { label: "실패", tone: "error" }
+  return { label: r.conclusion ?? r.status ?? "완료", tone: "neutral" }
+}
+
 function WorkflowRunner({ project }: { project?: ProjectItem | null }) {
   const [groups, setGroups] = useState<RepoWorkflows[]>([])
   const [loaded, setLoaded] = useState(false)
@@ -364,6 +372,8 @@ function WorkflowRunner({ project }: { project?: ProjectItem | null }) {
   const [selKey, setSelKey] = useState("")
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState("")
+  const [runs, setRuns] = useState<ActionRun[]>([])
+  const [runsAt, setRunsAt] = useState<Date | null>(null)
 
   useEffect(() => {
     if (!project) return
@@ -378,6 +388,19 @@ function WorkflowRunner({ project }: { project?: ProjectItem | null }) {
       .catch((e) => { if (alive) setLoadErr((e as Error).message) })
       .finally(() => { if (alive) setLoaded(true) })
     return () => { alive = false }
+  }, [project])
+
+  // 실행 내역 — 10초 폴링. 웹훅으로 미러에 잡힌 모든 실행(대시보드·에이전트·CI)이 보여요.
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    const tick = () =>
+      getProjectRuns(project.id)
+        .then((rs) => { if (alive) { setRuns(rs); setRunsAt(new Date()) } })
+        .catch(() => {})
+    tick()
+    const iv = setInterval(tick, 10_000)
+    return () => { alive = false; clearInterval(iv) }
   }, [project])
 
   if (!project) return null
@@ -429,6 +452,36 @@ function WorkflowRunner({ project }: { project?: ProjectItem | null }) {
         <div className="mt-3 rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] text-text-secondary">실행할 워크플로가 없어요 — 저장소 <code className="font-mono">.github/workflows/</code> 에 workflow_dispatch 트리거가 있는 워크플로를 추가하세요.</div>
       ) : null}
       {notice && <div className={`mt-3 rounded-[8px] px-3 py-2 text-[12px] font-semibold ${notice.startsWith("✅") ? "bg-success-light text-success" : "bg-warning-light text-[#b47908]"}`}>{notice}</div>}
+
+      {/* 실행 내역 — 실행이 있을 때마다 웹훅으로 잡혀 여기 쌓여요 */}
+      <div className="mt-4 border-t border-line pt-3">
+        <div className="mb-1.5 flex items-center gap-2">
+          <span className="text-[12px] font-bold uppercase tracking-wide text-text-disabled">실행 내역</span>
+          <span className="text-[11px] text-text-tertiary">10초마다 갱신{runsAt ? ` · 마지막 ${runsAt.toLocaleTimeString("ko-KR")}` : ""}</span>
+        </div>
+        {runs.length === 0 ? (
+          <div className="rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] text-text-secondary">아직 실행 기록이 없어요 — 실행하면(대시보드·에이전트·CI 어느 쪽이든) 웹훅으로 여기 표시돼요.</div>
+        ) : (
+          <div className="divide-y divide-line">
+            {runs.map((r) => {
+              const b = runBadge(r)
+              return (
+                <div key={`${r.repo}#${r.id}`} className="flex items-center gap-2.5 py-1.5">
+                  <Badge tone={b.tone}>{b.label}</Badge>
+                  <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-text-primary">{r.name ?? "workflow"}</span>
+                  <span className="hidden truncate font-mono text-[11px] text-text-tertiary sm:block">{r.repo}{r.head_branch ? ` · ${r.head_branch}` : ""}</span>
+                  <span className="shrink-0 text-[11px] text-text-tertiary">{r.updated_at ? relTime(r.updated_at) : ""}</span>
+                  {r.html_url && (
+                    <a href={r.html_url} target="_blank" rel="noreferrer" className="inline-flex shrink-0 items-center text-blue hover:underline" aria-label="GitHub에서 열기">
+                      <Icon name="external" className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </Card>
   )
 }

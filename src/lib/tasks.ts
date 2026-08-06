@@ -111,6 +111,21 @@ export type GanttRow = {
 export const getProjectGantt = (projectId: string) =>
   j<GanttRow[]>(`/api/mirror/projects/${projectId}/gantt`)
 
+// ---- Actions 실행 내역 — 실행이 있을 때마다 웹훅으로 미러에 잡혀 여기로 내려와요 ----
+export type ActionRun = {
+  repo: string
+  id: number
+  name: string | null
+  status: string | null
+  conclusion: string | null
+  head_branch: string | null
+  html_url: string | null
+  updated_at: string | null
+}
+
+export const getProjectRuns = (projectId: string, limit = 10) =>
+  j<ActionRun[]>(`/api/mirror/projects/${projectId}/runs?limit=${limit}`)
+
 // ---- 외부 워크플로 실행 (workflow_dispatch) — 결과는 웹훅으로 미러·피드에 돌아와요 ----
 export type RepoWorkflows = {
   repo: string

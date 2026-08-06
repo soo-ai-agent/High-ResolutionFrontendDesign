@@ -110,6 +110,11 @@ class MirrorController(
   @PostMapping("/projects/{id}/dispatch/run")
   fun runDispatch(@PathVariable id: String): DispatchStatusDto = taskService.runDispatch(id, force = true)
 
+  // Actions 실행 내역 — 프로젝트 저장소들의 workflow_run 미러 (실행이 있을 때마다 여기 보여요).
+  @GetMapping("/projects/{id}/runs")
+  fun projectRuns(@PathVariable id: String, @RequestParam(defaultValue = "10") limit: Int): List<MirrorRunDto> =
+    activity.runs(id, limit.coerceIn(1, 50))
+
   // 진행 간트 — 활동 이력 기반 실적 타임라인.
   @GetMapping("/projects/{id}/gantt")
   fun projectGantt(@PathVariable id: String): List<GanttRowDto> = taskService.gantt(id)

@@ -5,6 +5,7 @@ import dev.agentflow.domain.ProjectRepository
 import dev.agentflow.domain.RunRepository
 import dev.agentflow.domain.TaskActivityRepository
 import dev.agentflow.domain.TaskRepository
+import dev.agentflow.dto.MirrorRunDto
 import dev.agentflow.dto.ProjectActivityDto
 import dev.agentflow.util.RepoCoords
 import org.springframework.http.HttpStatus
@@ -51,6 +52,19 @@ class ProjectActivityService(
 
     return out
       .sortedByDescending { runCatching { Instant.parse(it.at) }.getOrElse { Instant.EPOCH } }
+      .take(limit)
+  }
+
+  // Actions 실행 내역 — 프로젝트 저장소들의 workflow_run 미러를 최신순으로 내려요.
+  // 대시보드 실행이든 에이전트·CI 가 유발한 실행이든, 웹훅으로 들어온 모든 실행이 잡혀요.
+  fun runs(projectId: String, limit: Int): List<MirrorRunDto> {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    return project.repos
+      .map { r -> RepoCoords.of(project.org, r).let { (o, n) -> "$o/$n" } }
+      .flatMap { f -> runs.findByRepo(f) }
+      .map { MirrorRunDto(it.repo, it.runId, it.name, it.status, it.conclusion, it.headBranch, it.htmlUrl, it.updatedAt) }
+      .sortedByDescending { runCatching { Instant.parse(it.updated_at ?: "") }.getOrElse { Instant.EPOCH } }
       .take(limit)
   }
 }
