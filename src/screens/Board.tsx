@@ -43,6 +43,8 @@ export default function Board() {
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState("")
   const [repoFilter, setRepoFilter] = useState("all")
+  const [notice, setNotice] = useState("")
+  const [busyKey, setBusyKey] = useState("")
 
   const load = async () => {
     setLoading(true)
@@ -79,6 +81,21 @@ export default function Board() {
   const shown = repoFilter === "all" ? cards : cards.filter((c) => c.repo === repoFilter)
   const isEmpty = !loading && cards.length === 0
 
+  // 카드 착수(A안) — 결과 메시지를 배너로 보여주고 보드를 다시 불러요.
+  const kickoff = async (c: BoardCard) => {
+    setBusyKey(c.key)
+    setNotice("")
+    try {
+      const r = await mirror.boardKickoff(c.repo, c.number)
+      setNotice(`✅ ${r.message}`)
+      await load()
+    } catch (ex) {
+      setNotice(`⚠️ ${ex instanceof Error ? ex.message : String(ex)}`)
+    } finally {
+      setBusyKey("")
+    }
+  }
+
   return (
     <div className="space-y-6">
       <SectionTitle
@@ -95,6 +112,7 @@ export default function Board() {
       </div>
 
       {err && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[13px] font-semibold text-error">{err}</div>}
+      {notice && <div className={`rounded-[10px] px-3 py-2 text-[13px] font-semibold ${notice.startsWith("✅") ? "bg-success-light text-success" : "bg-warning-light text-[#b47908]"}`}>{notice}</div>}
 
       {isEmpty ? (
         <EmptyState
@@ -124,7 +142,7 @@ export default function Board() {
                     <span className="rounded-full bg-[#eef1f4] px-2 py-0.5 text-[11px] font-bold text-text-tertiary">{items.length}</span>
                   </div>
                   <div className="space-y-3">
-                    {items.map((c) => <BoardCardView key={c.key} card={c} showRepo={repoFilter === "all"} />)}
+                    {items.map((c) => <BoardCardView key={c.key} card={c} showRepo={repoFilter === "all"} onKickoff={kickoff} busy={busyKey === c.key} />)}
                     {items.length === 0 && <div className="rounded-[12px] border border-dashed border-line py-8 text-center text-[12px] text-text-disabled">비어 있음</div>}
                   </div>
                 </div>
@@ -137,7 +155,9 @@ export default function Board() {
   )
 }
 
-function BoardCardView({ card, showRepo }: { card: BoardCard; showRepo: boolean }) {
+function BoardCardView({ card, showRepo, onKickoff, busy }: { card: BoardCard; showRepo: boolean; onKickoff: (c: BoardCard) => void; busy: boolean }) {
+  // 시작 전 컬럼의 이슈 카드만 착수 버튼을 보여줘요 — 진행·리뷰·완료 카드는 대상 아님.
+  const startable = card.kind === "이슈" && (card.column === "Backlog" || card.column === "Todo")
   return (
     <a href={card.url} target="_blank" rel="noreferrer" className="block rounded-[12px] border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-hover">
       <div className="flex items-center gap-2 text-[12px]">
@@ -155,6 +175,15 @@ function BoardCardView({ card, showRepo }: { card: BoardCard; showRepo: boolean 
         <div className="mt-2.5 flex items-center gap-1 border-t border-line pt-2 text-[11px] text-text-tertiary">
           <Icon name="github" className="h-3.5 w-3.5" /><span className="truncate font-mono">{card.repo}</span>
         </div>
+      )}
+      {startable && (
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onKickoff(card) }}
+          disabled={busy}
+          className="mt-2.5 flex w-full items-center justify-center gap-1 rounded-[8px] bg-blue-light py-1.5 text-[11px] font-bold text-blue hover:brightness-95 disabled:opacity-50"
+        >
+          <Icon name="sparkle" className="h-3 w-3" />{busy ? "착수 중…" : "에이전트 착수"}
+        </button>
       )}
     </a>
   )

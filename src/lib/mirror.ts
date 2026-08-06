@@ -14,7 +14,8 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
     let msg = `요청 실패 (${res.status})`
     try {
       const b = await res.json()
-      if (b?.error) msg = b.error
+      if (b?.message) msg = b.message
+      else if (b?.error) msg = b.error
     } catch {
       // ignore
     }
@@ -22,6 +23,15 @@ async function j<T>(path: string, init?: RequestInit): Promise<T> {
   }
   return (await res.json()) as T
 }
+
+// 보드 카드 착수(A안) — 카드 이슈가 작업 계획과 매칭되면 작업 착수, 아니면 이슈에 @claude 지시만.
+export type BoardKickoff = { mode: "task" | "issue"; message: string }
+export const boardKickoff = (repo: string, number: number) =>
+  j<BoardKickoff>("/api/mirror/board/kickoff", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, number }),
+  })
 
 export const getSummary = () => j<MirrorSummary>("/api/mirror/summary")
 export const listIssues = (repo?: string) => j<MirrorIssue[]>("/api/mirror/issues" + (repo ? `?repo=${encodeURIComponent(repo)}` : ""))

@@ -9,6 +9,7 @@ import dev.agentflow.domain.TaskActivityEntity
 import dev.agentflow.domain.TaskActivityRepository
 import dev.agentflow.domain.TaskEntity
 import dev.agentflow.domain.TaskRepository
+import dev.agentflow.dto.BoardKickoffResponse
 import dev.agentflow.dto.DispatchConfigRequest
 import dev.agentflow.dto.DispatchStatusDto
 import dev.agentflow.dto.IssueCreateRequest
@@ -122,6 +123,49 @@ class TaskService(
     val (project, _, _) = coordsOf(projectId, t)
     startTask(project, t)
     return t.toDto()
+  }
+
+  // 보드 카드 착수(A안) — 앱 보드의 카드 버튼으로 실행. 카드의 이슈가 작업 계획과 매칭되면
+  // 기존 착수 경로(상태 전환 포함)를 타고, 매칭이 없는 일반 이슈면 @claude 지시만 보내요.
+  fun boardKickoff(repoFull: String, number: Long): BoardKickoffResponse {
+    if (repoFull.isBlank() || !repoFull.contains("/") || number <= 0)
+      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "repo(owner/이름)·number 가 필요해요.")
+    val issue = issues.findByRepoAndNumber(repoFull, number)
+    for (p in projects.findAll()) {
+      val repoName = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == repoFull }?.name
+        ?: continue
+      val all = tasks.findByProjectIdOrderBySeq(p.id).filter { it.repo == repoName }
+      val code = issue?.title?.let { Regex("""\[(T-\d{3})\]""").find(it)?.groupValues?.get(1) }
+      val t = all.firstOrNull { it.issueNumber == number }
+        ?: code?.let { c -> all.firstOrNull { it.code == c && it.issueNumber == null } }
+        ?: continue
+      if (t.owner != "ai")
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "${t.code} 는 담당이 ${t.owner} 라 에이전트 착수 대상이 아니에요.")
+      when (t.status) {
+        "완료" -> throw ResponseStatusException(HttpStatus.CONFLICT, "${t.code} 는 이미 완료된 작업이에요.")
+        "검토 대기" -> throw ResponseStatusException(HttpStatus.CONFLICT, "${t.code} 는 검토 대기 중이에요 — 작업 계획에서 피드백으로 재개하세요.")
+      }
+      if (t.issueNumber == null) {
+        t.issueNumber = number
+        t.issueUrl = issue?.htmlUrl
+        t.lastIssueState = issue?.state
+        record(t.id, "이슈 연결", "보드 카드의 이슈 #$number 연결 (제목 매칭)")
+      }
+      startTask(p, t, via = "보드 착수 — ")
+      return BoardKickoffResponse("task", t.toDto(), "${t.code} 착수 — 이슈 #$number 에 @claude 지시를 보냈어요.")
+    }
+    // 작업 계획 매칭 없음 — 일반 이슈에 바로 지시
+    val (owner, name) = repoFull.split("/", limit = 2).let { it[0] to it[1] }
+    gitHub.claudeComment(owner, name, number, genericIssuePrompt(issue?.title))
+    return BoardKickoffResponse("issue", null, "이슈 #$number 에 @claude 지시를 보냈어요 (작업 계획 매칭 없음).")
+  }
+
+  private fun genericIssuePrompt(title: String?) = buildString {
+    appendLine((title?.let { "'$it' " } ?: "") + "이슈를 처리해 주세요.")
+    appendLine()
+    appendLine("- 이 저장소에 브랜치를 만들어 구현하고 PR 을 올려 주세요.")
+    appendLine("- 구현이 끝나면 PR 로 이 이슈를 닫아 주세요.")
+    appendLine("- Agent Flow 보드에서 착수한 요청이에요.")
   }
 
   // 보드 이동 트리거(B안) — GitHub Projects 카드가 In Progress 로 이동하면, 그 이슈에

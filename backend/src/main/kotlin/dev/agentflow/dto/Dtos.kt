@@ -37,6 +37,14 @@ data class DispatchStatusDto(
 )
 data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
 
+// ---- 보드 카드 착수 (A안) ----
+data class BoardKickoffRequest(val repo: String = "", val number: Long = 0)
+data class BoardKickoffResponse(
+  val mode: String, // task = 작업 계획 착수 | issue = 일반 이슈에 @claude 지시만
+  val task: TaskDto? = null,
+  val message: String,
+)
+
 // ---- CI 실패 자동 회복 ----
 data class CiRecoveryItemDto(
   val taskCode: String,

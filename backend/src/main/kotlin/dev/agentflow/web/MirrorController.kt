@@ -117,6 +117,11 @@ class MirrorController(
   @PostMapping("/projects/{id}/ci-recovery/run")
   fun runCiRecovery(@PathVariable id: String): CiRecoveryResultDto = ciRecovery.sweep(id)
 
+  // 보드 카드 착수(A안) — 카드 이슈가 작업 계획과 매칭되면 작업 착수, 아니면 이슈에 @claude 지시.
+  @PostMapping("/board/kickoff")
+  fun boardKickoff(@RequestBody req: BoardKickoffRequest): BoardKickoffResponse =
+    taskService.boardKickoff(req.repo, req.number)
+
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =
     taskService.review(id, taskId, req)
