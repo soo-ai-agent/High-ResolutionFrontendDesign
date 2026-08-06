@@ -86,9 +86,11 @@ class GitHubService(
     return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), text)
   }
 
-  // 파일 쓰기(contents API) — 있으면 갱신(sha 필요), 없으면 생성. CLAUDE.md 동기화에 써요.
+  // 파일 쓰기(contents API) — 있으면 갱신(sha 필요), 없으면 생성. CLAUDE.md·스킬 동기화에 써요.
+  // 문서 동기화는 읽기와 같은 폴백을 허용해요: UI PAT → 서버 환경 GITHUB_TOKEN.
   fun putFile(owner: String, repo: String, path: String, content: String, message: String): String {
-    val t = tokenOr401()
+    val t = tokenStore.token ?: envToken
+      ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "GitHub에 연결되어 있지 않아요.")
     val existing = runCatching {
       client.get().uri("/repos/{o}/{r}/contents/{p}", owner, repo, path).headers(auth(t)).retrieve().body(JsonNode::class.java)
     }.getOrNull()

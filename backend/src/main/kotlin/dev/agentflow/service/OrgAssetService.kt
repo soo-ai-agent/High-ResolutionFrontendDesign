@@ -82,6 +82,28 @@ class OrgAssetService(
     return RuleSyncResponse(results, merged.second)
   }
 
+  // 스킬만 동기화 — CLAUDE.md 는 건드리지 않고 .claude/skills/ 파일만 푸시해요.
+  // 저장소의 기존 CLAUDE.md 를 덮어쓰지 않아야 할 때(추가 파일만 원할 때) 쓰는 안전한 경로예요.
+  fun syncSkillsOnly(): OrgSyncResponse {
+    val skills = assets.findAll().filter { it.kind == "skill" }
+    if (skills.isEmpty()) throw ResponseStatusException(HttpStatus.NOT_FOUND, "등록된 스킬이 없어요.")
+    val results = projects.findAll().flatMap { p ->
+      p.repos.map { r ->
+        val (owner, name) = RepoCoords.of(p.org, r)
+        try {
+          var lastUrl = ""
+          skills.forEach { s ->
+            lastUrl = gitHub.putFile(owner, name, ".claude/skills/${slug(s)}/SKILL.md", withFrontmatter(s), "docs: Agent Flow 스킬 동기화 — ${s.name}")
+          }
+          RuleSyncItemDto("$owner/$name", true, lastUrl, "스킬 ${skills.size}개")
+        } catch (e: ResponseStatusException) {
+          RuleSyncItemDto("$owner/$name", false, null, e.reason ?: e.message)
+        }
+      }
+    }
+    return OrgSyncResponse(results, skills.size)
+  }
+
   // 모든 프로젝트 일괄 동기화 — 조직 화면의 "전체 동기화" 버튼.
   fun syncAll(): OrgSyncResponse {
     val skillCount = assets.findAll().count { it.kind == "skill" }

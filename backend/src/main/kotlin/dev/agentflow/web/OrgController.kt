@@ -29,4 +29,8 @@ class OrgController(private val org: OrgAssetService) {
   // 모든 프로젝트 저장소에 일괄 동기화 — CLAUDE.md(조직+프로젝트 병합) + 스킬 파일들.
   @PostMapping("/sync-repos")
   fun syncAll(): OrgSyncResponse = org.syncAll()
+
+  // 스킬만 동기화 — 기존 CLAUDE.md 를 건드리지 않고 .claude/skills/ 만 추가·갱신해요.
+  @PostMapping("/sync-skills")
+  fun syncSkills(): OrgSyncResponse = org.syncSkillsOnly()
 }
