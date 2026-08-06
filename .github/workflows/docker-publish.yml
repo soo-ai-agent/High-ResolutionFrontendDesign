@@ -1,0 +1,52 @@
+# Docker Hub 이미지 발행 — 수동 실행(workflow_dispatch) 전용.
+#
+# 필요한 GitHub Actions 시크릿 (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME : Docker Hub 아이디
+#   DOCKERHUB_TOKEN    : Docker Hub Access Token (Account Settings → Security → New Access Token, Read & Write)
+#
+# 발행 후 서버에서: docker compose up -d  (저장소 루트의 docker-compose.yml 참고)
+name: Publish to Docker Hub
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "추가 태그 (기본: latest + v<실행번호>)"
+        required: false
+        default: ""
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    concurrency: docker-publish
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Resolve tags
+        id: tags
+        run: |
+          IMAGE="${{ secrets.DOCKERHUB_USERNAME }}/agent-flow"
+          TAGS="$IMAGE:latest,$IMAGE:v${{ github.run_number }}"
+          [ -n "${{ github.event.inputs.tag }}" ] && TAGS="$TAGS,$IMAGE:${{ github.event.inputs.tag }}"
+          echo "tags=$TAGS" >> "$GITHUB_OUTPUT"
+
+      # 프론트(dist)+백엔드(jar)를 모두 빌드하는 다단계 Dockerfile — 컨텍스트는 저장소 루트.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: backend/Dockerfile
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          echo "✅ 발행 완료: ${{ steps.tags.outputs.tags }}"
+          echo "서버 실행: docker run -d -p 8443:8443 -v agentflow-data:/data ${{ secrets.DOCKERHUB_USERNAME }}/agent-flow:latest"

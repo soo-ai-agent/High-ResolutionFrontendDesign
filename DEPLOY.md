@@ -47,6 +47,29 @@ docker build -f backend/Dockerfile -t agent-flow .    # 컨텍스트=저장소 �
 docker run -p 8443:8443 -e GITHUB_WEBHOOK_SECRET=<secret> -v agent-flow-data:/data agent-flow
 ```
 
+## Docker Hub 로 설치 (권장 Docker 경로)
+
+빌드는 GitHub Actions 가 하고, 서버는 이미지를 받아 실행만 해요.
+
+1. **이미지 발행 (1회 설정 + 버튼 1번)**
+   - Docker Hub → Account Settings → Security → **New Access Token** (Read & Write) 발급.
+   - GitHub 저장소 Settings → Secrets and variables → Actions 에 등록:
+     `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`
+   - Actions 탭 → **Publish to Docker Hub** → Run workflow
+     → `<아이디>/agent-flow:latest` + `:v<실행번호>` 태그로 발행돼요.
+2. **서버에서 실행** — 저장소 루트의 `docker-compose.yml` 사용:
+   ```bash
+   # .env 예시
+   DOCKERHUB_IMAGE=<아이디>/agent-flow:latest
+   GITHUB_WEBHOOK_SECRET=$(openssl rand -hex 32)
+   ANTHROPIC_API_KEY=sk-ant-...
+
+   docker compose up -d          # → http://<서버>:8443
+   ```
+3. **HTTPS 도메인 연결** — GitHub 웹훅이 서버에 닿아야 자동화 루프(상태 전이·리뷰·CI 회복)가 돌아요.
+   Caddy/Nginx/Traefik 등 리버스 프록시로 `https://<도메인>` → `localhost:8443` 을 연결하세요.
+4. 업데이트: 워크플로 재실행 → 서버에서 `docker compose pull && docker compose up -d`.
+
 ## GitHub 웹훅 연결 (배포 후)
 1. **설정 › 연동**에서 PAT 연결 (`admin:repo_hook` 포함).
 2. **GitHub 미러 › 웹훅 연결**: 전달 URL `https://<배포주소>/api/webhook/github` + `GITHUB_WEBHOOK_SECRET` 과 동일한 시크릿 → 등록.
