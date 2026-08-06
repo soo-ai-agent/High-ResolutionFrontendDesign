@@ -191,6 +191,18 @@ class E2eRunEntity(
   @Column(length = 4000) var shotsCsv: String = "", // 파일명 쉼표 목록
 )
 
+// 조직 공통 자산 — 프로젝트 밖에서 관리하는 코드 규칙(1개)과 에이전트 스킬(여러 개).
+// 여러 프로젝트가 같은 규칙을 쓰므로, 동기화 시 프로젝트 규칙과 병합돼 저장소로 푸시돼요.
+@Entity
+class OrgAssetEntity(
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var id: Long = 0,
+  var kind: String = "skill", // rules | skill
+  @Column(length = 200) var name: String = "",
+  @Column(length = 100000) var contentMd: String = "",
+  var docVersion: String = "v1.0",
+  var updatedAt: String = "",
+)
+
 // 테스트케이스 레지스트리 — 화면별로 관리하는 케이스 정의. 실행 결과와는 이름으로 매칭해요.
 @Entity
 class TestCaseEntity(

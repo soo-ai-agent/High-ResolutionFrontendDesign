@@ -23,6 +23,7 @@ const MENU = [
   { group: "운영", items: [
     { key: "human-tasks", label: "휴먼태스크", icon: "hand" },
     { key: "qa", label: "테스트 리포트", icon: "test" },
+    { key: "org", label: "조직 규칙·스킬", icon: "palette" },
     { key: "settings", label: "설정", icon: "settings" },
   ] },
 ]

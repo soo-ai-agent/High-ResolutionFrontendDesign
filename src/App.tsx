@@ -9,6 +9,7 @@ import { HumanTasks, Settings } from "./screens/Ops"
 import ProjectDocScreen from "./screens/ProjectDoc"
 import TasksScreen from "./screens/Tasks"
 import QaScreen from "./screens/Qa"
+import OrgScreen from "./screens/Org"
 import type { ProjectItem } from "./data"
 
 // MVP 6화면: 로그인 · 프로젝트 · 진행 흐름 · GitHub 미러 · Projects 보드 · 휴먼태스크 · 설정(연동)
@@ -22,6 +23,7 @@ const SCREENS: Record<string, (nav: (r: string) => void, project: ProjectItem | 
   "projects-board": () => <Board />,
   "human-tasks": (_nav, project) => <HumanTasks project={project} />,
   qa: () => <QaScreen />,
+  org: () => <OrgScreen />,
   settings: (nav) => <Settings navigate={nav} />,
 }
 

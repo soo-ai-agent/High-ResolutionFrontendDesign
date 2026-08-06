@@ -125,6 +125,12 @@ data class DocUpdateRequest(val title: String?, val client: String?, val author:
 data class RuleSyncItemDto(val repo: String, val ok: Boolean, val url: String? = null, val message: String? = null)
 data class RuleSyncResponse(val results: List<RuleSyncItemDto>, val docVersion: String)
 
+// ---- 조직 공통 자산 (코드 규칙 · 에이전트 스킬) — 프로젝트 밖에서 관리 ----
+data class OrgAssetDto(val id: Long, val kind: String, val name: String, val contentMd: String, val docVersion: String, val updatedAt: String)
+data class OrgAssetCreateRequest(val kind: String = "skill", val name: String = "", val contentMd: String = "")
+data class OrgAssetUpdateRequest(val name: String? = null, val contentMd: String? = null)
+data class OrgSyncResponse(val results: List<RuleSyncItemDto>, val skills: Int)
+
 // 문서 리비전 — 목록 조회에서는 contentMd 를 비워 응답을 가볍게, 단건 조회에서만 전문 포함.
 data class DocRevisionDto(
   val seq: Long,

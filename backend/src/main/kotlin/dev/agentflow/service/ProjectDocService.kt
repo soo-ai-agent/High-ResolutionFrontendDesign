@@ -9,8 +9,6 @@ import dev.agentflow.domain.ProjectRepository
 import dev.agentflow.dto.DocRevisionDto
 import dev.agentflow.dto.DocUpdateRequest
 import dev.agentflow.dto.ProjectDocDto
-import dev.agentflow.dto.RuleSyncItemDto
-import dev.agentflow.dto.RuleSyncResponse
 import dev.agentflow.dto.ProjectRepo
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -95,28 +93,6 @@ class ProjectDocService(
     val saved = docs.save(e)
     snapshot(saved, "사람 수정")
     return saved.toDto()
-  }
-
-  // 코드 규칙 → 저장소 CLAUDE.md 동기화 — 코딩 에이전트가 매 작업마다 읽는 파일이라,
-  // 대시보드에서 확정한 규칙이 곧바로 모든 @claude 작업에 적용돼요.
-  fun syncRulesToRepos(projectId: String): RuleSyncResponse {
-    val doc = docs.findByProjectIdAndDocType(projectId, "rules")
-      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "코드 규칙 문서가 아직 없어요. 먼저 생성하세요.")
-    val project = projects.findById(projectId).orElse(null)
-      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
-    val results = project.repos.map { r ->
-      val (owner, name) = RepoCoords.of(project.org, r)
-      try {
-        val url = gitHub.putFile(
-          owner, name, "CLAUDE.md", doc.contentMd,
-          "docs: Agent Flow 코드 규칙 동기화 (${doc.docVersion})",
-        )
-        RuleSyncItemDto("$owner/$name", true, url)
-      } catch (e: ResponseStatusException) {
-        RuleSyncItemDto("$owner/$name", false, null, e.reason ?: e.message)
-      }
-    }
-    return RuleSyncResponse(results, doc.docVersion)
   }
 
   // ---- 버전 이력 — 리비전마다 전문이 남아 초안 대비 변경을 비교(diff)할 수 있어요 ----

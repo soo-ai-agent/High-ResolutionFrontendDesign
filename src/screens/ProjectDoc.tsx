@@ -14,7 +14,7 @@ const SOURCE_BADGE: Record<ProjectDoc["source"], { label: string; tone: "purple"
 const DOC_META: Record<DocType, { name: string; genDesc: string }> = {
   prd: { name: "PRD", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 요구사항 문서 초안을 만들어요." },
   ia: { name: "IA·화면설계", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 화면 구조(IA)·SCR 목록·화면별 상세 명세 초안을 만들어요." },
-  rules: { name: "코드 규칙", genDesc: "저장소 코드를 분석해 에이전트가 코드 작성 규칙 초안을 만들어요. 확정하면 저장소 CLAUDE.md 로 동기화되어 모든 @claude 작업에 적용돼요." },
+  rules: { name: "코드 규칙", genDesc: "저장소 코드를 분석해 에이전트가 이 프로젝트 전용 규칙 초안을 만들어요. 동기화하면 조직 공통 규칙(조직 규칙·스킬 메뉴)과 병합되어 저장소 CLAUDE.md 로 푸시돼요." },
 }
 
 export default function ProjectDocScreen({ project, docType }: { project: ProjectItem | null; docType: DocType }) {

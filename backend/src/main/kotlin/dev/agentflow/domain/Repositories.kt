@@ -47,6 +47,8 @@ interface E2eRunRepository : JpaRepository<E2eRunEntity, Long>
 
 interface TestCaseRepository : JpaRepository<TestCaseEntity, Long>
 
+interface OrgAssetRepository : JpaRepository<OrgAssetEntity, Long>
+
 interface TaskActivityRepository : JpaRepository<TaskActivityEntity, Long> {
   fun findByTaskIdOrderBySeqDesc(taskId: String): List<TaskActivityEntity>
   fun deleteByTaskId(taskId: String)

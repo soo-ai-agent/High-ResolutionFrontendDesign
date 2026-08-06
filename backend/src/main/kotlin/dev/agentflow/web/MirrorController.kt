@@ -3,6 +3,7 @@ package dev.agentflow.web
 import dev.agentflow.dto.*
 import dev.agentflow.service.CiRecoveryService
 import dev.agentflow.service.MirrorService
+import dev.agentflow.service.OrgAssetService
 import dev.agentflow.service.ProjectActivityService
 import dev.agentflow.service.ProjectDocService
 import dev.agentflow.service.ProjectService
@@ -23,6 +24,7 @@ class MirrorController(
   private val activity: ProjectActivityService,
   private val ciRecovery: CiRecoveryService,
   private val workflows: ProjectWorkflowService,
+  private val orgAssets: OrgAssetService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -160,9 +162,10 @@ class MirrorController(
   fun updateDoc(@PathVariable id: String, @PathVariable type: String, @RequestBody req: DocUpdateRequest): ProjectDocDto =
     docs.update(id, type, req)
 
-  // 코드 규칙 → 프로젝트 저장소들의 CLAUDE.md 로 동기화 (코딩 에이전트가 매 작업마다 읽어요).
+  // 코드 규칙 → 프로젝트 저장소들의 CLAUDE.md 로 동기화 — 조직 공통 규칙과 병합되고,
+  // 조직 스킬도 .claude/skills/ 로 함께 푸시돼요 (코딩 에이전트가 매 작업마다 읽어요).
   @PostMapping("/projects/{id}/docs/rules/sync-repo")
-  fun syncRules(@PathVariable id: String): RuleSyncResponse = docs.syncRulesToRepos(id)
+  fun syncRules(@PathVariable id: String): RuleSyncResponse = orgAssets.syncProject(id)
 
   // ---- 문서 버전 이력 (에이전트 초안 보존 · diff 평가용) ----
   @GetMapping("/projects/{id}/docs/{type}/revisions")
