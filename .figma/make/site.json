@@ -1,5 +1,7 @@
 {
-  "description": "Manage GitHub repository workflows from PRD to release with AI-driven automation for streamlined planning, development, testing, and deployment.",
+  "title": "그늘길 — 그늘 예측 경로",
+  "description": "현재 시간과 위치로 태양 위치를 계산해 그늘을 예측하고, 햇빛을 피해 최대한 그늘로 걷는 경로를 추천하는 앱.",
+  "language": "ko",
   "robots": {
     "index": false
   },
