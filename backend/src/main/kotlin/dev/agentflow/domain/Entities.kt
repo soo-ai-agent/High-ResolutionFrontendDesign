@@ -191,6 +191,16 @@ class E2eRunEntity(
   @Column(length = 4000) var shotsCsv: String = "", // 파일명 쉼표 목록
 )
 
+// 테스트케이스 레지스트리 — 화면별로 관리하는 케이스 정의. 실행 결과와는 이름으로 매칭해요.
+@Entity
+class TestCaseEntity(
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var id: Long = 0,
+  @Column(length = 100) var screen: String = "", // 화면 이름 (로그인/프로젝트/…)
+  @Column(length = 500) var name: String = "",
+  @Column(length = 1000) var note: String = "",
+  var createdAt: String = "",
+)
+
 // 태스크 활동 로그 — 생성·수정·이슈 연결·자동 완료 등 진행 이력을 시간순으로 남겨요.
 @Entity
 class TaskActivityEntity(

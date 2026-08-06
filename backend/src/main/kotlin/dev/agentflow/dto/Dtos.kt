@@ -79,6 +79,10 @@ data class E2eRunDto(
 data class E2eRunCreateRequest(val name: String = "", val cases: List<E2eCaseDto> = emptyList())
 data class E2eShotRequest(val file: String = "", val dataBase64: String = "")
 
+// 테스트케이스 레지스트리 — 화면별 케이스 정의(사람이 등록·관리)
+data class TestCaseDto(val id: Long, val screen: String, val name: String, val note: String, val createdAt: String)
+data class TestCaseCreateRequest(val screen: String = "", val name: String = "", val note: String = "")
+
 // ---- 진행 간트 — 활동 이력에서 파생한 실적 타임라인 (계획이 아니라 실제 시각) ----
 data class GanttRowDto(
   val code: String,

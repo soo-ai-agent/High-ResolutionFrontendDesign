@@ -3,6 +3,8 @@ package dev.agentflow.web
 import dev.agentflow.dto.E2eRunCreateRequest
 import dev.agentflow.dto.E2eRunDto
 import dev.agentflow.dto.E2eShotRequest
+import dev.agentflow.dto.TestCaseCreateRequest
+import dev.agentflow.dto.TestCaseDto
 import dev.agentflow.service.E2eReportService
 import org.springframework.http.MediaType
 import org.springframework.http.ResponseEntity
@@ -26,4 +28,17 @@ class E2eController(private val e2e: E2eReportService) {
   @GetMapping("/runs/{id}/shots/{file}")
   fun shot(@PathVariable id: Long, @PathVariable file: String): ResponseEntity<ByteArray> =
     ResponseEntity.ok().contentType(MediaType.IMAGE_PNG).body(e2e.shot(id, file))
+
+  // ---- 테스트케이스 레지스트리 — 화면별 케이스 정의 (사람이 등록·관리) ----
+  @GetMapping("/cases")
+  fun listCases(): List<TestCaseDto> = e2e.listCases()
+
+  @PostMapping("/cases")
+  fun createCase(@RequestBody req: TestCaseCreateRequest): TestCaseDto = e2e.createCase(req)
+
+  @DeleteMapping("/cases/{id}")
+  fun deleteCase(@PathVariable id: Long): Map<String, Any> {
+    e2e.deleteCase(id)
+    return mapOf("ok" to true)
+  }
 }

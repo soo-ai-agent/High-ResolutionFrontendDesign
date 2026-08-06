@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react"
-import { Icon, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
-import { listE2eRuns, e2eShotUrl, type E2eRun } from "../lib/e2e"
+import { Icon, Badge, Button, Card, SectionTitle, EmptyState } from "../components/ui"
+import { listE2eRuns, e2eShotUrl, listTestCases, createTestCase, deleteTestCase, TEST_SCREENS, type E2eRun, type TestCase } from "../lib/e2e"
 
-// 테스트 리포트 — E2E 실행별 테스트케이스 결과와 캡처 스크린샷을 확인해요.
-// E2E 스크립트가 실행 끝에 결과를 업로드하면 여기 쌓여요.
+// 테스트 리포트 — 화면별 테스트케이스 관리 + E2E 실행별 결과·캡처 확인.
+// 케이스의 최근 결과는 최신 실행의 같은 이름 케이스와 매칭해요(없으면 미실행).
 export default function QaScreen() {
+  const [tab, setTab] = useState<"cases" | "runs">("cases")
   const [runs, setRuns] = useState<E2eRun[]>([])
+  const [cases, setCases] = useState<TestCase[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState("")
   const [selId, setSelId] = useState<number | null>(null)
@@ -15,20 +17,52 @@ export default function QaScreen() {
 
   useEffect(() => {
     let alive = true
-    listE2eRuns()
-      .then((rs) => { if (alive) { setRuns(rs); setSelId(rs[0]?.id ?? null) } })
+    Promise.all([listE2eRuns(), listTestCases()])
+      .then(([rs, cs]) => { if (alive) { setRuns(rs); setCases(cs); setSelId(rs[0]?.id ?? null) } })
       .catch((e) => { if (alive) setError((e as Error).message) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
   }, [])
 
+  // 최근 결과 — 최신 실행에서 같은 이름의 자동화 케이스를 찾아요.
+  const latest = runs[0] ?? null
+  const resultOf = (c: TestCase): "통과" | "실패" | "미실행" => {
+    const hit = latest?.cases.find((x) => x.name === c.name)
+    return hit ? (hit.ok ? "통과" : "실패") : "미실행"
+  }
+
+  const addCase = async (screen: string, name: string) => {
+    setError("")
+    try {
+      const created = await createTestCase(screen, name)
+      setCases((cs) => [...cs, created])
+    } catch (e) { setError((e as Error).message) }
+  }
+  const removeCase = async (id: number) => {
+    setError("")
+    try { await deleteTestCase(id); setCases((cs) => cs.filter((c) => c.id !== id)) }
+    catch (e) { setError((e as Error).message) }
+  }
+
   return (
     <div className="space-y-6">
-      <SectionTitle title="테스트 리포트" desc="E2E 실행별 테스트케이스 결과와 화면 캡처를 확인해요. 스크립트가 실행을 마치면 결과가 여기로 업로드돼요." />
+      <SectionTitle title="테스트 리포트" desc="화면별 테스트케이스를 관리하고, E2E 실행 결과·화면 캡처를 확인해요."
+        action={
+          <div className="flex items-center gap-1.5">
+            <Button variant={tab === "cases" ? "primary" : "secondary"} size="sm" onClick={() => setTab("cases")}>화면별 케이스</Button>
+            <Button variant={tab === "runs" ? "primary" : "secondary"} size="sm" onClick={() => setTab("runs")}>실행 리포트</Button>
+          </div>
+        } />
 
       {error && <div className="rounded-[12px] bg-error-light px-4 py-3 text-[13px] font-semibold text-error">{error}</div>}
 
-      {loading ? (
+      {tab === "cases" && !loading && (
+        <ScreenCases cases={cases} resultOf={resultOf} latestAt={latest?.at ?? null} onAdd={addCase} onRemove={removeCase} />
+      )}
+
+      {tab === "cases" && loading && <Card className="p-10 text-center text-[13px] text-text-tertiary">불러오는 중…</Card>}
+
+      {tab === "runs" && (loading ? (
         <Card className="p-10 text-center text-[13px] text-text-tertiary">리포트를 불러오는 중…</Card>
       ) : runs.length === 0 ? (
         <EmptyState title="아직 업로드된 E2E 실행이 없어요." desc="E2E 스크립트가 실행 결과(테스트케이스·스크린샷)를 업로드하면 실행별로 여기에 쌓여요." />
@@ -88,7 +122,7 @@ export default function QaScreen() {
             </div>
           )}
         </div>
-      )}
+      ))}
 
       {/* 캡처 크게 보기 */}
       {viewShot && sel && (
@@ -103,6 +137,88 @@ export default function QaScreen() {
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+// ===== 화면별 테스트케이스 — 보기·등록·삭제. 최근 결과는 최신 실행과 이름 매칭 =====
+
+const RESULT_TONE: Record<string, "success" | "error" | "neutral"> = { "통과": "success", "실패": "error", "미실행": "neutral" }
+
+function ScreenCases({ cases, resultOf, latestAt, onAdd, onRemove }: {
+  cases: TestCase[]
+  resultOf: (c: TestCase) => "통과" | "실패" | "미실행"
+  latestAt: string | null
+  onAdd: (screen: string, name: string) => Promise<void>
+  onRemove: (id: number) => Promise<void>
+}) {
+  const [drafts, setDrafts] = useState<Record<string, string>>({})
+
+  // 화면 순서 고정 + 목록에 없는 화면은 뒤에
+  const screens = [...TEST_SCREENS, ...new Set(cases.map((c) => c.screen).filter((s) => !TEST_SCREENS.includes(s)))]
+  const total = cases.length
+  const passed = cases.filter((c) => resultOf(c) === "통과").length
+  const failed = cases.filter((c) => resultOf(c) === "실패").length
+
+  const submit = async (screen: string) => {
+    const name = (drafts[screen] ?? "").trim()
+    if (!name) return
+    await onAdd(screen, name)
+    setDrafts((d) => ({ ...d, [screen]: "" }))
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-3 text-[12px] text-text-secondary">
+        <span className="font-bold text-text-primary">케이스 {total}개</span>
+        <span className="mx-1 text-line-strong">·</span>
+        <Badge tone="success">통과 {passed}</Badge>
+        <Badge tone="error">실패 {failed}</Badge>
+        <Badge tone="neutral">미실행 {total - passed - failed}</Badge>
+        <span className="ml-auto text-text-tertiary">{latestAt ? `최근 결과 기준: ${new Date(latestAt).toLocaleString("ko-KR")} 실행` : "아직 실행 결과 없음"}</span>
+      </div>
+
+      {screens.map((screen) => {
+        const items = cases.filter((c) => c.screen === screen)
+        return (
+          <Card key={screen} className="p-4">
+            <div className="flex items-center gap-2">
+              <span className="text-[14px] font-bold text-text-primary">{screen}</span>
+              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-text-tertiary">{items.length}</span>
+            </div>
+
+            {items.length > 0 && (
+              <div className="mt-2 divide-y divide-line">
+                {items.map((c) => {
+                  const r = resultOf(c)
+                  return (
+                    <div key={c.id} className="group flex items-center gap-2.5 py-1.5">
+                      <Badge tone={RESULT_TONE[r]}>{r}</Badge>
+                      <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{c.name}</span>
+                      {c.note && <span className="hidden truncate text-[11px] text-text-tertiary md:block">{c.note}</span>}
+                      <button onClick={() => onRemove(c.id)} className="rounded-[6px] p-1 text-text-disabled opacity-0 hover:bg-error-light hover:text-error group-hover:opacity-100" aria-label="삭제">
+                        <Icon name="close" className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            {/* 케이스 추가 — 이름이 E2E 자동화 케이스와 같으면 결과가 자동 매칭돼요 */}
+            <div className="mt-2 flex gap-2">
+              <input
+                value={drafts[screen] ?? ""}
+                onChange={(e) => setDrafts((d) => ({ ...d, [screen]: e.target.value }))}
+                onKeyDown={(e) => e.key === "Enter" && submit(screen)}
+                placeholder={`${screen} 화면의 테스트케이스 추가 (예: 빈 상태에서 안내 문구가 보인다)`}
+                className="h-9 flex-1 rounded-[10px] border border-line bg-surface px-3 text-[13px] outline-none focus:border-blue"
+              />
+              <Button variant="secondary" size="sm" onClick={() => submit(screen)} disabled={!(drafts[screen] ?? "").trim()} icon={<Icon name="plus" className="h-3.5 w-3.5" />}>추가</Button>
+            </div>
+          </Card>
+        )
+      })}
     </div>
   )
 }

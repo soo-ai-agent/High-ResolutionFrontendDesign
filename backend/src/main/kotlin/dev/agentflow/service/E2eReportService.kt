@@ -2,9 +2,13 @@ package dev.agentflow.service
 
 import dev.agentflow.domain.E2eRunEntity
 import dev.agentflow.domain.E2eRunRepository
+import dev.agentflow.domain.TestCaseEntity
+import dev.agentflow.domain.TestCaseRepository
 import dev.agentflow.dto.E2eCaseDto
 import dev.agentflow.dto.E2eRunCreateRequest
 import dev.agentflow.dto.E2eRunDto
+import dev.agentflow.dto.TestCaseCreateRequest
+import dev.agentflow.dto.TestCaseDto
 import dev.agentflow.util.Json
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.http.HttpStatus
@@ -19,6 +23,7 @@ import java.util.Base64
 @Service
 class E2eReportService(
   private val runs: E2eRunRepository,
+  private val cases: TestCaseRepository,
   @Value("\${MIRROR_DATA_DIR:./.data}") private val dataDir: String,
 ) {
   private val safeName = Regex("""^[a-zA-Z0-9._-]{1,120}$""")
@@ -59,6 +64,28 @@ class E2eReportService(
     val f = File(dataDir, "e2e-shots/$id/$file")
     if (!f.isFile) throw ResponseStatusException(HttpStatus.NOT_FOUND, "스크린샷이 없어요.")
     return f.readBytes()
+  }
+
+  // ---- 테스트케이스 레지스트리 — 화면별 케이스 정의 CRUD ----
+  fun listCases(): List<TestCaseDto> =
+    cases.findAll().sortedBy { it.id }.map { TestCaseDto(it.id, it.screen, it.name, it.note, it.createdAt) }
+
+  fun createCase(req: TestCaseCreateRequest): TestCaseDto {
+    if (req.screen.isBlank() || req.name.isBlank())
+      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "screen·name 이 필요해요.")
+    if (cases.findAll().any { it.screen == req.screen && it.name == req.name.trim() })
+      throw ResponseStatusException(HttpStatus.CONFLICT, "같은 화면에 같은 이름의 케이스가 이미 있어요.")
+    val e = cases.save(TestCaseEntity(
+      screen = req.screen.take(100), name = req.name.trim().take(500),
+      note = req.note.take(1000), createdAt = Instant.now().toString(),
+    ))
+    return TestCaseDto(e.id, e.screen, e.name, e.note, e.createdAt)
+  }
+
+  fun deleteCase(id: Long) {
+    val e = cases.findById(id).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "케이스가 없어요.")
+    cases.delete(e)
   }
 
   private fun E2eRunEntity.toDto(): E2eRunDto {
