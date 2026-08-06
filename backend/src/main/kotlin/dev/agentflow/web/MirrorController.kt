@@ -110,6 +110,10 @@ class MirrorController(
   @PostMapping("/projects/{id}/dispatch/run")
   fun runDispatch(@PathVariable id: String): DispatchStatusDto = taskService.runDispatch(id, force = true)
 
+  // 진행 간트 — 활동 이력 기반 실적 타임라인.
+  @GetMapping("/projects/{id}/gantt")
+  fun projectGantt(@PathVariable id: String): List<GanttRowDto> = taskService.gantt(id)
+
   // 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인.
   @GetMapping("/projects/{id}/activity")
   fun projectActivity(@PathVariable id: String, @RequestParam(defaultValue = "50") limit: Int): List<ProjectActivityDto> =

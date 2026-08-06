@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Icon, Badge, Button, Card, SectionTitle } from "../components/ui"
 import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage, type ProjectItem } from "../data"
-import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, type ProjectActivity, type RepoWorkflows } from "../lib/tasks"
+import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, getProjectGantt, type ProjectActivity, type RepoWorkflows, type GanttRow } from "../lib/tasks"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -41,6 +41,9 @@ export default function Pipeline({ navigate, project }: { navigate: (r: string) 
 
       {/* 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 라이브 타임라인 */}
       <AgentActivityFeed project={project} />
+
+      {/* 진행 간트 — 활동 이력 기반 실적 타임라인 */}
+      <GanttCard project={project} />
 
       {/* 외부 워크플로 실행 — 프로젝트 저장소의 Actions 를 대시보드에서 workflow_dispatch 로 */}
       <WorkflowRunner project={project} />
@@ -237,6 +240,117 @@ function AgentActivityFeed({ project }: { project?: ProjectItem | null }) {
           )}
         </>
       )}
+    </Card>
+  )
+}
+
+// ===== 진행 간트 — 활동 이력에서 파생한 실적 타임라인 (계획표가 아니라 실제 기록) =====
+
+const GANTT_TONE: Record<string, string> = {
+  "완료": "bg-success",
+  "진행 중": "bg-blue",
+  "검토 대기": "bg-[#7c5cfc]",
+}
+const GANTT_STATUS_TONE: Record<string, "success" | "blue" | "warning" | "purple"> = {
+  "완료": "success", "진행 중": "blue", "대기": "warning", "검토 대기": "purple",
+}
+
+function GanttCard({ project }: { project?: ProjectItem | null }) {
+  const [rows, setRows] = useState<GanttRow[]>([])
+  const [loaded, setLoaded] = useState(false)
+
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    getProjectGantt(project.id)
+      .then((rs) => { if (alive) setRows(rs) })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoaded(true) })
+    return () => { alive = false }
+  }, [project])
+
+  if (!project || !loaded || rows.length === 0) return null
+
+  const now = Date.now()
+  const times = rows.flatMap((r) => [r.createdAt, r.startedAt, r.endedAt].filter((s): s is string => !!s)).map((s) => new Date(s).getTime())
+  const t0 = Math.min(...times, now - 86_400_000) // 최소 하루 폭 확보
+  const span = now - t0
+  const pct = (t: number) => ((t - t0) / span) * 100
+  const fmt = (t: number) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}` }
+  const ticks = [0.25, 0.5, 0.75]
+
+  // 단계 순서 그대로 그룹핑 (서버가 단계 순으로 내려줘요)
+  const groups: { phase: string; items: GanttRow[] }[] = []
+  rows.forEach((r) => {
+    const g = groups[groups.length - 1]
+    if (g && g.phase === r.phase) g.items.push(r)
+    else groups.push({ phase: r.phase, items: [r] })
+  })
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-blue-light text-blue"><Icon name="board" className="h-4.5 w-4.5" /></span>
+        <div>
+          <div className="text-[15px] font-bold text-text-primary">진행 간트</div>
+          <div className="text-[12px] text-text-tertiary">활동 이력 기반 실적 타임라인 — 막대는 착수부터 완료(미완료는 지금)까지, 점은 분해만 되고 아직 착수 전이에요.</div>
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2 text-[11px] font-semibold text-text-secondary">
+          <span className="flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-success" />완료</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-blue" />진행 중</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-4 rounded-full bg-[#7c5cfc]" />검토 대기</span>
+          <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full border-2 border-line-strong bg-surface" />대기</span>
+        </div>
+      </div>
+
+      <div className="mt-4">
+        {/* 시간 축 */}
+        <div className="mb-1 flex items-center">
+          <div className="w-[250px] shrink-0" />
+          <div className="relative h-4 flex-1 text-[10px] font-semibold text-text-tertiary">
+            <span className="absolute left-0">{fmt(t0)}</span>
+            {ticks.map((f) => <span key={f} className="absolute -translate-x-1/2" style={{ left: `${f * 100}%` }}>{fmt(t0 + span * f)}</span>)}
+            <span className="absolute right-0">지금</span>
+          </div>
+        </div>
+
+        {groups.map((g) => (
+          <div key={g.phase} className="mb-1">
+            <div className="flex items-center">
+              <div className="w-[250px] shrink-0 py-1 text-[11px] font-bold uppercase tracking-wider text-text-disabled">{g.phase}</div>
+              <div className="flex-1" />
+            </div>
+            {g.items.map((r) => {
+              const started = r.startedAt ? new Date(r.startedAt).getTime() : null
+              const ended = r.endedAt ? new Date(r.endedAt).getTime() : null
+              const created = r.createdAt ? new Date(r.createdAt).getTime() : t0
+              const left = started != null ? pct(started) : pct(created)
+              const width = started != null ? Math.max(pct(ended ?? now) - pct(started), 1.4) : 0
+              return (
+                <div key={r.code} className="flex items-center py-0.5">
+                  <div className="flex w-[250px] shrink-0 items-center gap-1.5 pr-3">
+                    <span className="font-mono text-[11px] font-bold text-text-tertiary">{r.code}</span>
+                    <span className="min-w-0 flex-1 truncate text-[12px] font-semibold text-text-primary">{r.title}</span>
+                    <Badge tone={GANTT_STATUS_TONE[r.status] ?? "warning"}>{r.status}</Badge>
+                  </div>
+                  <div className="relative h-5 flex-1 overflow-hidden rounded-[6px] bg-surface-2">
+                    {ticks.map((f) => <span key={f} className="absolute top-0 h-full w-px bg-line" style={{ left: `${f * 100}%` }} />)}
+                    {started != null ? (
+                      <div
+                        className={`absolute top-1 h-3 rounded-full ${GANTT_TONE[r.status] ?? "bg-line-strong"} ${ended == null ? "opacity-90" : ""}`}
+                        style={{ left: `${Math.min(left, 98)}%`, width: `${Math.min(width, 100 - Math.min(left, 98))}%` }}
+                        title={`${r.code} · ${r.status}`}
+                      />
+                    ) : (
+                      <span className="absolute top-1.5 h-2 w-2 -translate-x-1/2 rounded-full border-2 border-line-strong bg-surface" style={{ left: `${Math.max(Math.min(pct(created), 98), 1)}%` }} title={`${r.code} · 대기`} />
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
     </Card>
   )
 }

@@ -96,6 +96,21 @@ export type ProjectActivity = {
 export const getProjectActivity = (projectId: string, limit = 50) =>
   j<ProjectActivity[]>(`/api/mirror/projects/${projectId}/activity?limit=${limit}`)
 
+// ---- 진행 간트 — 활동 이력 기반 실적 타임라인 (생성·착수·완료 실제 시각) ----
+export type GanttRow = {
+  code: string
+  title: string
+  phase: string
+  owner: "ai" | "human" | "auto"
+  status: string
+  createdAt: string | null
+  startedAt: string | null
+  endedAt: string | null
+}
+
+export const getProjectGantt = (projectId: string) =>
+  j<GanttRow[]>(`/api/mirror/projects/${projectId}/gantt`)
+
 // ---- 외부 워크플로 실행 (workflow_dispatch) — 결과는 웹훅으로 미러·피드에 돌아와요 ----
 export type RepoWorkflows = {
   repo: string

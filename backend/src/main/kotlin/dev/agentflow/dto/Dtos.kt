@@ -65,6 +65,18 @@ data class CiRecoveryResultDto(
   val message: String? = null,
 )
 
+// ---- 진행 간트 — 활동 이력에서 파생한 실적 타임라인 (계획이 아니라 실제 시각) ----
+data class GanttRowDto(
+  val code: String,
+  val title: String,
+  val phase: String,
+  val owner: String,
+  val status: String,
+  val createdAt: String?, // 분해(생성) 시각
+  val startedAt: String?, // 착수 시각 — 대기 작업은 null
+  val endedAt: String?, // 완료 시각 — 미완료는 null(진행 중 막대는 '지금'까지)
+)
+
 // ---- 프로젝트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인 ----
 data class ProjectActivityDto(
   val at: String,

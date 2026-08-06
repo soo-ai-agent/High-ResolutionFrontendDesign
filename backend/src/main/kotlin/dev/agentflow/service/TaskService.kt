@@ -11,6 +11,7 @@ import dev.agentflow.domain.TaskEntity
 import dev.agentflow.domain.TaskRepository
 import dev.agentflow.dto.BoardKickoffResponse
 import dev.agentflow.dto.DispatchConfigRequest
+import dev.agentflow.dto.GanttRowDto
 import dev.agentflow.dto.DispatchStatusDto
 import dev.agentflow.dto.IssueCreateRequest
 import dev.agentflow.dto.TaskActivityDto
@@ -409,6 +410,28 @@ class TaskService(
     t.source = "human"
     t.updatedAt = Instant.now().toString()
     return tasks.save(t).toDto()
+  }
+
+  // 진행 간트 — 활동 이력에서 실적 시각(생성·착수·완료)을 뽑아요. 단계 순서로 정렬.
+  fun gantt(projectId: String): List<GanttRowDto> {
+    projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    return tasks.findByProjectIdOrderBySeq(projectId)
+      .sortedWith(compareBy({ phaseRank(it.phase) }, { it.seq }))
+      .map { t ->
+        val acts = activities.findByTaskIdOrderBySeqDesc(t.id).reversed() // 시간순
+        val created = acts.firstOrNull()?.at
+        // 착수 활동이 정식 시작점 — 없으면(수동 상태 변경 등) 진행 중 전환 기록, 그것도 없으면 생성 시각.
+        val started = acts.firstOrNull { it.kind == "착수" }?.at
+          ?: acts.firstOrNull { it.kind == "수정" && it.note.contains("→ 진행 중") }?.at
+        val ended = acts.lastOrNull { it.kind == "완료" }?.at
+        GanttRowDto(
+          t.code, t.title, t.phase, t.owner, t.status,
+          created,
+          if (t.status == "대기") null else (started ?: created),
+          if (t.status == "완료") (ended ?: t.updatedAt) else null,
+        )
+      }
   }
 
   private fun fullRepoOf(project: ProjectEntity, repoName: String): String? {
