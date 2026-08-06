@@ -57,7 +57,7 @@ export default function QaScreen() {
       {error && <div className="rounded-[12px] bg-error-light px-4 py-3 text-[13px] font-semibold text-error">{error}</div>}
 
       {tab === "cases" && !loading && (
-        <ScreenCases cases={cases} resultOf={resultOf} latestAt={latest?.at ?? null} onAdd={addCase} onRemove={removeCase} />
+        <ScreenCases cases={cases} resultOf={resultOf} latest={latest} onAdd={addCase} onRemove={removeCase} onViewShot={(f) => { setSelId(latest?.id ?? null); setViewShot(f) }} />
       )}
 
       {tab === "cases" && loading && <Card className="p-10 text-center text-[13px] text-text-tertiary">불러오는 중…</Card>}
@@ -145,13 +145,26 @@ export default function QaScreen() {
 
 const RESULT_TONE: Record<string, "success" | "error" | "neutral"> = { "통과": "success", "실패": "error", "미실행": "neutral" }
 
-function ScreenCases({ cases, resultOf, latestAt, onAdd, onRemove }: {
+// 캡처 파일명 → 화면 매칭 (E2E 캡처 파일명 규칙 기반). 순서 중요 — human 이 tasks 보다 먼저.
+const SHOT_KEYS: [string, string][] = [
+  ["login", "로그인"], ["wizard", "프로젝트"], ["projects", "프로젝트"],
+  ["pipeline", "진행 흐름"], ["gantt", "진행 흐름"],
+  ["prd", "PRD"], ["ia", "IA·화면설계"], ["rules", "코드 규칙"],
+  ["human", "휴먼태스크"], ["tasks", "작업 계획"],
+  ["mirror", "GitHub 미러"], ["board", "Projects 보드"],
+  ["settings", "설정"], ["qa", "테스트 리포트"],
+]
+const screenOfShot = (f: string): string | null => SHOT_KEYS.find(([k]) => f.toLowerCase().includes(k))?.[1] ?? null
+
+function ScreenCases({ cases, resultOf, latest, onAdd, onRemove, onViewShot }: {
   cases: TestCase[]
   resultOf: (c: TestCase) => "통과" | "실패" | "미실행"
-  latestAt: string | null
+  latest: E2eRun | null
   onAdd: (screen: string, name: string) => Promise<void>
   onRemove: (id: number) => Promise<void>
+  onViewShot: (file: string) => void
 }) {
+  const latestAt = latest?.at ?? null
   const [screen, setScreen] = useState(TEST_SCREENS[0])
   const [name, setName] = useState("")
 
@@ -203,16 +216,27 @@ function ScreenCases({ cases, resultOf, latestAt, onAdd, onRemove }: {
         <Card className="overflow-hidden">
           {screens.map((s) => {
             const items = cases.filter((c) => c.screen === s)
+            const shots = latest ? latest.shots.filter((f) => screenOfShot(f) === s) : []
             return (
               <div key={s}>
                 <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-4 py-2">
                   <span className="text-[12px] font-bold text-text-primary">{s}</span>
                   <span className="text-[11px] font-semibold text-text-tertiary">{items.length}</span>
+                  {/* 최신 실행에서 이 화면의 캡처 — 클릭하면 크게 보기 */}
+                  {shots.length > 0 && (
+                    <div className="ml-auto flex items-center gap-1.5">
+                      {shots.map((f) => (
+                        <button key={f} onClick={() => onViewShot(f)} className="overflow-hidden rounded-[6px] border border-line hover:border-blue" title={f}>
+                          <img src={e2eShotUrl(latest!.id, f)} alt={f} loading="lazy" className="h-9 w-16 object-cover object-top" />
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                {items.map((c, i) => {
+                {items.map((c) => {
                   const r = resultOf(c)
                   return (
-                    <div key={c.id} className={`group flex items-center gap-2.5 px-4 py-2 ${i < items.length - 1 ? "border-b border-line" : "border-b border-line"}`} title={c.note || undefined}>
+                    <div key={c.id} className="group flex items-center gap-2.5 border-b border-line px-4 py-2" title={c.note || undefined}>
                       <Badge tone={RESULT_TONE[r]}>{r}</Badge>
                       <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{c.name}</span>
                       <button onClick={() => onRemove(c.id)} className="rounded-[6px] p-1 text-text-disabled opacity-0 hover:bg-error-light hover:text-error group-hover:opacity-100" aria-label="삭제">
