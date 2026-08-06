@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
-import { Icon, Badge, Card, SectionTitle } from "../components/ui"
+import { Icon, Badge, Button, Card, SectionTitle } from "../components/ui"
 import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage, type ProjectItem } from "../data"
-import { getProjectActivity, type ProjectActivity } from "../lib/tasks"
+import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, type ProjectActivity, type RepoWorkflows } from "../lib/tasks"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -41,6 +41,9 @@ export default function Pipeline({ navigate, project }: { navigate: (r: string) 
 
       {/* 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 라이브 타임라인 */}
       <AgentActivityFeed project={project} />
+
+      {/* 외부 워크플로 실행 — 프로젝트 저장소의 Actions 를 대시보드에서 workflow_dispatch 로 */}
+      <WorkflowRunner project={project} />
 
       {/* 지금 실제로 동작하는 기반(backbone) */}
       <Card className="border-success/30 bg-success-light/20 p-5">
@@ -234,6 +237,84 @@ function AgentActivityFeed({ project }: { project?: ProjectItem | null }) {
           )}
         </>
       )}
+    </Card>
+  )
+}
+
+// ===== 외부 워크플로 실행 — 저장소별 워크플로를 골라 workflow_dispatch 로 원격 실행해요 =====
+
+function WorkflowRunner({ project }: { project?: ProjectItem | null }) {
+  const [groups, setGroups] = useState<RepoWorkflows[]>([])
+  const [loaded, setLoaded] = useState(false)
+  const [loadErr, setLoadErr] = useState("")
+  const [selKey, setSelKey] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState("")
+
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    listProjectWorkflows(project.id)
+      .then((gs) => {
+        if (!alive) return
+        setGroups(gs)
+        const first = gs.flatMap((g) => g.workflows.map((w) => `${g.repo}#${w.id}`))[0]
+        if (first) setSelKey(first)
+      })
+      .catch((e) => { if (alive) setLoadErr((e as Error).message) })
+      .finally(() => { if (alive) setLoaded(true) })
+    return () => { alive = false }
+  }, [project])
+
+  if (!project) return null
+
+  const run = async () => {
+    const [repo, idStr] = selKey.split("#")
+    if (!repo || !idStr) return
+    setBusy(true)
+    setNotice("")
+    try {
+      const r = await dispatchProjectWorkflow(project.id, repo, Number(idStr))
+      setNotice(`✅ ${r.message}`)
+    } catch (e) {
+      setNotice(`⚠️ ${(e as Error).message}`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const total = groups.reduce((n, g) => n + g.workflows.length, 0)
+
+  return (
+    <Card className="p-5">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[10px] bg-success-light text-success"><Icon name="runs" className="h-4.5 w-4.5" /></span>
+        <div className="min-w-0">
+          <div className="text-[15px] font-bold text-text-primary">외부 워크플로 실행</div>
+          <div className="text-[12px] text-text-tertiary">저장소의 GitHub Actions 를 대시보드에서 바로 실행해요 (workflow_dispatch). 결과는 웹훅으로 미러·활동 피드에 돌아와요.</div>
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          {total > 0 && (
+            <select value={selKey} onChange={(e) => setSelKey(e.target.value)}
+              className="h-9 max-w-[320px] rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
+              {groups.map((g) => (
+                <optgroup key={g.repo} label={`${g.repoName} (${g.repo})`}>
+                  {g.workflows.map((w) => <option key={w.id} value={`${g.repo}#${w.id}`}>{w.name}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          )}
+          <Button variant="primary" size="sm" onClick={run} disabled={busy || !selKey} icon={<Icon name="play" className="h-4 w-4" />}>{busy ? "요청 중…" : "실행"}</Button>
+        </div>
+      </div>
+      {!loaded ? (
+        <div className="mt-3 text-[12px] text-text-tertiary">워크플로 목록을 불러오는 중…</div>
+      ) : loadErr ? (
+        <div className="mt-3 rounded-[8px] bg-warning-light px-3 py-2 text-[12px] font-semibold text-[#b47908]">{loadErr} — 설정에서 PAT 를 연결하면 저장소의 워크플로를 불러와요.</div>
+      ) : total === 0 ? (
+        <div className="mt-3 rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] text-text-secondary">실행할 워크플로가 없어요 — 저장소 <code className="font-mono">.github/workflows/</code> 에 workflow_dispatch 트리거가 있는 워크플로를 추가하세요.</div>
+      ) : null}
+      {notice && <div className={`mt-3 rounded-[8px] px-3 py-2 text-[12px] font-semibold ${notice.startsWith("✅") ? "bg-success-light text-success" : "bg-warning-light text-[#b47908]"}`}>{notice}</div>}
     </Card>
   )
 }

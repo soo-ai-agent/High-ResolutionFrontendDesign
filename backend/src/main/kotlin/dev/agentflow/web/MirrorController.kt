@@ -6,6 +6,7 @@ import dev.agentflow.service.MirrorService
 import dev.agentflow.service.ProjectActivityService
 import dev.agentflow.service.ProjectDocService
 import dev.agentflow.service.ProjectService
+import dev.agentflow.service.ProjectWorkflowService
 import dev.agentflow.service.TaskService
 import org.springframework.http.HttpStatus
 import org.springframework.http.ResponseEntity
@@ -21,6 +22,7 @@ class MirrorController(
   private val taskService: TaskService,
   private val activity: ProjectActivityService,
   private val ciRecovery: CiRecoveryService,
+  private val workflows: ProjectWorkflowService,
 ) {
   @GetMapping("", "/", "/summary")
   fun summary(): MirrorSummary = mirror.summary()
@@ -121,6 +123,14 @@ class MirrorController(
   @PostMapping("/board/kickoff")
   fun boardKickoff(@RequestBody req: BoardKickoffRequest): BoardKickoffResponse =
     taskService.boardKickoff(req.repo, req.number)
+
+  // ---- 외부 워크플로 실행 (workflow_dispatch) ----
+  @GetMapping("/projects/{id}/workflows")
+  fun listWorkflows(@PathVariable id: String): List<RepoWorkflowsDto> = workflows.list(id)
+
+  @PostMapping("/projects/{id}/workflows/dispatch")
+  fun dispatchWorkflow(@PathVariable id: String, @RequestBody req: WorkflowDispatchRequest): WorkflowDispatchResponse =
+    workflows.dispatch(id, req)
 
   @PostMapping("/projects/{id}/tasks/{taskId}/review")
   fun reviewTask(@PathVariable id: String, @PathVariable taskId: String, @RequestBody req: TaskReviewRequest): TaskDto =

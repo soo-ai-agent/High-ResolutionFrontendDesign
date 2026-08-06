@@ -25,6 +25,7 @@ class GitHubService(
     403 -> "요청 한도를 초과했거나 접근 권한이 없어요."
     404 -> "대상을 찾을 수 없어요."
     410 -> "저장소에서 Issues 기능이 꺼져 있어요. GitHub 저장소 Settings → Features 에서 Issues 를 켜 주세요."
+    422 -> "실행할 수 없어요 — 워크플로에 workflow_dispatch 트리거가 있는지, 브랜치(ref)가 맞는지 확인하세요."
     else -> "GitHub 요청에 실패했어요 ($status)."
   }
 
@@ -83,6 +84,24 @@ class GitHubService(
       client.post().uri("/repos/{o}/{r}/issues/{n}/comments", owner, repo, number).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(mapOf("body" to text)).retrieve().body(JsonNode::class.java)
     }!!
     return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), text)
+  }
+
+  // ---- Actions 워크플로 — 목록 조회 · workflow_dispatch 실행 ----
+  fun listWorkflows(owner: String, repo: String): List<WorkflowDto> {
+    val t = tokenOr401()
+    val j = translate {
+      client.get().uri("/repos/{o}/{r}/actions/workflows?per_page=100", owner, repo).headers(auth(t)).retrieve().body(JsonNode::class.java)
+    }
+    val arr = j?.path("workflows") ?: return emptyList()
+    return arr.map { WorkflowDto(it.path("id").asLong(), it.path("name").asText(""), it.path("path").asText(""), it.path("state").asText("")) }
+  }
+
+  fun dispatchWorkflow(owner: String, repo: String, workflowId: Long, ref: String) {
+    val t = tokenOr401()
+    translate {
+      client.post().uri("/repos/{o}/{r}/actions/workflows/{w}/dispatches", owner, repo, workflowId)
+        .headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(mapOf("ref" to ref)).retrieve().toBodilessEntity()
+    }
   }
 
   fun reopenIssue(owner: String, repo: String, number: Long) {

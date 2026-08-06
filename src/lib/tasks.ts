@@ -96,6 +96,23 @@ export type ProjectActivity = {
 export const getProjectActivity = (projectId: string, limit = 50) =>
   j<ProjectActivity[]>(`/api/mirror/projects/${projectId}/activity?limit=${limit}`)
 
+// ---- 외부 워크플로 실행 (workflow_dispatch) — 결과는 웹훅으로 미러·피드에 돌아와요 ----
+export type RepoWorkflows = {
+  repo: string
+  repoName: string
+  workflows: { id: number; name: string; path: string; state: string }[]
+}
+
+export const listProjectWorkflows = (projectId: string) =>
+  j<RepoWorkflows[]>(`/api/mirror/projects/${projectId}/workflows`)
+
+export const dispatchProjectWorkflow = (projectId: string, repo: string, workflowId: number, ref?: string) =>
+  j<{ ok: boolean; ref: string; message: string }>(`/api/mirror/projects/${projectId}/workflows/dispatch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, workflowId, ref }),
+  })
+
 // ---- 진행·결과 (활동 이력 + 연결 이슈·PR) ----
 export type TaskActivity = { at: string; kind: string; note: string }
 export type TaskPull = { number: number; title: string; state: string | null; merged: boolean; url: string | null }

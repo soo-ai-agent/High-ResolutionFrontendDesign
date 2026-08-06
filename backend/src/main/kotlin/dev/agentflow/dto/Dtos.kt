@@ -37,6 +37,12 @@ data class DispatchStatusDto(
 )
 data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
 
+// ---- 외부 워크플로 실행 (workflow_dispatch) ----
+data class WorkflowDto(val id: Long, val name: String, val path: String, val state: String)
+data class RepoWorkflowsDto(val repo: String, val repoName: String, val workflows: List<WorkflowDto>)
+data class WorkflowDispatchRequest(val repo: String = "", val workflowId: Long = 0, val ref: String? = null)
+data class WorkflowDispatchResponse(val ok: Boolean, val ref: String, val message: String)
+
 // ---- 보드 카드 착수 (A안) ----
 data class BoardKickoffRequest(val repo: String = "", val number: Long = 0)
 data class BoardKickoffResponse(
