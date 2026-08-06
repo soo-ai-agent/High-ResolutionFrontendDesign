@@ -152,50 +152,69 @@ function ScreenCases({ cases, resultOf, latestAt, onAdd, onRemove }: {
   onAdd: (screen: string, name: string) => Promise<void>
   onRemove: (id: number) => Promise<void>
 }) {
-  const [drafts, setDrafts] = useState<Record<string, string>>({})
+  const [screen, setScreen] = useState(TEST_SCREENS[0])
+  const [name, setName] = useState("")
 
-  // 화면 순서 고정 + 목록에 없는 화면은 뒤에
+  // 화면 순서 고정 + 목록에 없는 화면은 뒤에. 케이스가 있는 화면만 보여줘요(추가는 위 폼에서 아무 화면이나).
   const screens = [...TEST_SCREENS, ...new Set(cases.map((c) => c.screen).filter((s) => !TEST_SCREENS.includes(s)))]
+    .filter((s) => cases.some((c) => c.screen === s))
   const total = cases.length
   const passed = cases.filter((c) => resultOf(c) === "통과").length
   const failed = cases.filter((c) => resultOf(c) === "실패").length
 
-  const submit = async (screen: string) => {
-    const name = (drafts[screen] ?? "").trim()
-    if (!name) return
+  const submit = async () => {
+    if (!name.trim()) return
     await onAdd(screen, name)
-    setDrafts((d) => ({ ...d, [screen]: "" }))
+    setName("")
   }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-3 text-[12px] text-text-secondary">
-        <span className="font-bold text-text-primary">케이스 {total}개</span>
-        <span className="mx-1 text-line-strong">·</span>
-        <Badge tone="success">통과 {passed}</Badge>
-        <Badge tone="error">실패 {failed}</Badge>
-        <Badge tone="neutral">미실행 {total - passed - failed}</Badge>
-        <span className="ml-auto text-text-tertiary">{latestAt ? `최근 결과 기준: ${new Date(latestAt).toLocaleString("ko-KR")} 실행` : "아직 실행 결과 없음"}</span>
-      </div>
+      {/* 추가 폼 — 한 곳에서만. 이름이 E2E 자동화 케이스와 같으면 결과가 자동 매칭돼요 */}
+      <Card className="p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={screen} onChange={(e) => setScreen(e.target.value)}
+            className="h-10 rounded-[10px] border border-line bg-surface px-2 text-[13px] outline-none focus:border-blue">
+            {TEST_SCREENS.map((s) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder="테스트케이스 이름 (예: 빈 상태에서 안내 문구가 보인다)"
+            className="h-10 min-w-[260px] flex-1 rounded-[10px] border border-line bg-surface px-3 text-[13px] outline-none focus:border-blue"
+          />
+          <Button variant="primary" size="sm" onClick={submit} disabled={!name.trim()} icon={<Icon name="plus" className="h-3.5 w-3.5" />}>케이스 추가</Button>
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-text-secondary">
+          <span className="font-bold text-text-primary">케이스 {total}개</span>
+          <span className="text-line-strong">·</span>
+          <Badge tone="success">통과 {passed}</Badge>
+          <Badge tone="error">실패 {failed}</Badge>
+          <Badge tone="neutral">미실행 {total - passed - failed}</Badge>
+          <span className="ml-auto text-text-tertiary">{latestAt ? `최근 결과: ${new Date(latestAt).toLocaleString("ko-KR")} 실행 기준` : "아직 실행 결과 없음"}</span>
+        </div>
+      </Card>
 
-      {screens.map((screen) => {
-        const items = cases.filter((c) => c.screen === screen)
-        return (
-          <Card key={screen} className="p-4">
-            <div className="flex items-center gap-2">
-              <span className="text-[14px] font-bold text-text-primary">{screen}</span>
-              <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-bold text-text-tertiary">{items.length}</span>
-            </div>
-
-            {items.length > 0 && (
-              <div className="mt-2 divide-y divide-line">
-                {items.map((c) => {
+      {/* 케이스 목록 — 한 카드 안에 화면별 섹션으로 컴팩트하게 */}
+      {total === 0 ? (
+        <EmptyState title="아직 테스트케이스가 없어요." desc="위에서 화면을 골라 첫 케이스를 추가하세요. E2E 자동화 케이스와 이름이 같으면 실행 결과가 자동으로 붙어요." />
+      ) : (
+        <Card className="overflow-hidden">
+          {screens.map((s) => {
+            const items = cases.filter((c) => c.screen === s)
+            return (
+              <div key={s}>
+                <div className="flex items-center gap-2 border-b border-line bg-surface-2 px-4 py-2">
+                  <span className="text-[12px] font-bold text-text-primary">{s}</span>
+                  <span className="text-[11px] font-semibold text-text-tertiary">{items.length}</span>
+                </div>
+                {items.map((c, i) => {
                   const r = resultOf(c)
                   return (
-                    <div key={c.id} className="group flex items-center gap-2.5 py-1.5">
+                    <div key={c.id} className={`group flex items-center gap-2.5 px-4 py-2 ${i < items.length - 1 ? "border-b border-line" : "border-b border-line"}`} title={c.note || undefined}>
                       <Badge tone={RESULT_TONE[r]}>{r}</Badge>
                       <span className="min-w-0 flex-1 truncate text-[13px] text-text-primary">{c.name}</span>
-                      {c.note && <span className="hidden truncate text-[11px] text-text-tertiary md:block">{c.note}</span>}
                       <button onClick={() => onRemove(c.id)} className="rounded-[6px] p-1 text-text-disabled opacity-0 hover:bg-error-light hover:text-error group-hover:opacity-100" aria-label="삭제">
                         <Icon name="close" className="h-3.5 w-3.5" />
                       </button>
@@ -203,22 +222,10 @@ function ScreenCases({ cases, resultOf, latestAt, onAdd, onRemove }: {
                   )
                 })}
               </div>
-            )}
-
-            {/* 케이스 추가 — 이름이 E2E 자동화 케이스와 같으면 결과가 자동 매칭돼요 */}
-            <div className="mt-2 flex gap-2">
-              <input
-                value={drafts[screen] ?? ""}
-                onChange={(e) => setDrafts((d) => ({ ...d, [screen]: e.target.value }))}
-                onKeyDown={(e) => e.key === "Enter" && submit(screen)}
-                placeholder={`${screen} 화면의 테스트케이스 추가 (예: 빈 상태에서 안내 문구가 보인다)`}
-                className="h-9 flex-1 rounded-[10px] border border-line bg-surface px-3 text-[13px] outline-none focus:border-blue"
-              />
-              <Button variant="secondary" size="sm" onClick={() => submit(screen)} disabled={!(drafts[screen] ?? "").trim()} icon={<Icon name="plus" className="h-3.5 w-3.5" />}>추가</Button>
-            </div>
-          </Card>
-        )
-      })}
+            )
+          })}
+        </Card>
+      )}
     </div>
   )
 }
