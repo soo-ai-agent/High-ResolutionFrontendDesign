@@ -135,7 +135,9 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
     <div className="space-y-6">
       <SectionTitle
         title={`${meta_.name}: ${doc?.title ?? project.name}`}
-        desc="주제별로 각각 수정할 수 있어요. 저장할 때마다 문서 버전이 올라가고, 전체는 하나의 마크다운으로 내보낼 수 있어요."
+        desc={docType === "rules"
+          ? "이 프로젝트 전용 규칙이에요. 저장소로 동기화하면 조직 공통 규칙(조직 규칙·스킬 메뉴)과 병합되어 CLAUDE.md 로 푸시돼요."
+          : "주제별로 각각 수정할 수 있어요. 저장할 때마다 문서 버전이 올라가고, 전체는 하나의 마크다운으로 내보낼 수 있어요."}
         action={doc ? (
           <div className="flex items-center gap-2">
             <Badge tone={SOURCE_BADGE[doc.source].tone}>{SOURCE_BADGE[doc.source].label}</Badge>
