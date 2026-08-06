@@ -179,6 +179,18 @@ class ProjectDocRevisionEntity(
   var at: String = "",
 )
 
+// E2E 테스트 리포트 — 실행별 테스트케이스 결과를 저장해요. 스크린샷은 디스크에 두고 파일명만 기록.
+@Entity
+class E2eRunEntity(
+  @Id @GeneratedValue(strategy = GenerationType.IDENTITY) var id: Long = 0,
+  var at: String = "",
+  @Column(length = 200) var name: String = "",
+  var total: Int = 0,
+  var passed: Int = 0,
+  @Column(length = 16000) var casesJson: String = "[]", // [{name, ok}]
+  @Column(length = 4000) var shotsCsv: String = "", // 파일명 쉼표 목록
+)
+
 // 태스크 활동 로그 — 생성·수정·이슈 연결·자동 완료 등 진행 이력을 시간순으로 남겨요.
 @Entity
 class TaskActivityEntity(

@@ -65,6 +65,20 @@ data class CiRecoveryResultDto(
   val message: String? = null,
 )
 
+// ---- E2E 테스트 리포트 — 실행별 케이스 결과 + 캡처 스크린샷 ----
+data class E2eCaseDto(val name: String, val ok: Boolean)
+data class E2eRunDto(
+  val id: Long,
+  val at: String,
+  val name: String,
+  val total: Int,
+  val passed: Int,
+  val cases: List<E2eCaseDto>,
+  val shots: List<String>,
+)
+data class E2eRunCreateRequest(val name: String = "", val cases: List<E2eCaseDto> = emptyList())
+data class E2eShotRequest(val file: String = "", val dataBase64: String = "")
+
 // ---- 진행 간트 — 활동 이력에서 파생한 실적 타임라인 (계획이 아니라 실제 시각) ----
 data class GanttRowDto(
   val code: String,

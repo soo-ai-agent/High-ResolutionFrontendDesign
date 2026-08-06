@@ -43,6 +43,8 @@ interface TaskRepository : JpaRepository<TaskEntity, String> {
   fun findByProjectIdOrderBySeq(projectId: String): List<TaskEntity>
 }
 
+interface E2eRunRepository : JpaRepository<E2eRunEntity, Long>
+
 interface TaskActivityRepository : JpaRepository<TaskActivityEntity, Long> {
   fun findByTaskIdOrderBySeqDesc(taskId: String): List<TaskActivityEntity>
   fun deleteByTaskId(taskId: String)
