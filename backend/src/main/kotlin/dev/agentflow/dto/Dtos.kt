@@ -103,6 +103,10 @@ data class ProjectDocDto(
 )
 data class DocUpdateRequest(val title: String?, val client: String?, val author: String?, val contentMd: String?)
 
+// 코드 규칙 → 저장소 CLAUDE.md 동기화 결과
+data class RuleSyncItemDto(val repo: String, val ok: Boolean, val url: String? = null, val message: String? = null)
+data class RuleSyncResponse(val results: List<RuleSyncItemDto>, val docVersion: String)
+
 // 문서 리비전 — 목록 조회에서는 contentMd 를 비워 응답을 가볍게, 단건 조회에서만 전문 포함.
 data class DocRevisionDto(
   val seq: Long,

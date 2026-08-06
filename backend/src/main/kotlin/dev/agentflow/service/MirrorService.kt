@@ -20,6 +20,16 @@ data class BoardStatusMoved(
   val boardStatus: String,
 )
 
+// PR 웹훅 이벤트 — 자동 리뷰 루프가 구독해요. 백필에서는 발행하지 않아요(과거 PR 에 리뷰 지시 방지).
+data class PullActivity(
+  val repo: String,
+  val number: Long,
+  val title: String?,
+  val state: String?,
+  val merged: Boolean,
+  val action: String?,
+)
+
 @Service
 @Transactional
 class MirrorService(
@@ -132,6 +142,7 @@ class MirrorService(
       event == "pull_request" && payload.has("pull_request") -> {
         val p = payload.path("pull_request")
         upsertPull(repoFull ?: "", p.path("number").asLong(), p.str("title"), p.str("state"), p.bool("merged"), p.bool("draft"), p.path("user").str("login"), p.str("html_url"), p.str("updated_at"), p.str("node_id"))
+        publisher.publishEvent(PullActivity(repoFull ?: "", p.path("number").asLong(), p.str("title"), p.str("state"), p.bool("merged"), payload.str("action")))
         summary = "PR #${p.path("number").asLong()} ${payload.str("action") ?: ""}".trim()
       }
       event == "projects_v2_item" -> {

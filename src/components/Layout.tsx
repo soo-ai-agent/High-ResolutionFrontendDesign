@@ -13,6 +13,7 @@ const MENU = [
   { group: "기획", items: [
     { key: "prd", label: "PRD", icon: "doc" },
     { key: "ia", label: "IA·화면설계", icon: "ia" },
+    { key: "rules", label: "코드 규칙", icon: "critic" },
     { key: "tasks", label: "작업 계획", icon: "list" },
   ] },
   { group: "개발", items: [

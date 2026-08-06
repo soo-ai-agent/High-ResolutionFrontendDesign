@@ -155,6 +155,10 @@ class MirrorController(
   fun updateDoc(@PathVariable id: String, @PathVariable type: String, @RequestBody req: DocUpdateRequest): ProjectDocDto =
     docs.update(id, type, req)
 
+  // 코드 규칙 → 프로젝트 저장소들의 CLAUDE.md 로 동기화 (코딩 에이전트가 매 작업마다 읽어요).
+  @PostMapping("/projects/{id}/docs/rules/sync-repo")
+  fun syncRules(@PathVariable id: String): RuleSyncResponse = docs.syncRulesToRepos(id)
+
   // ---- 문서 버전 이력 (에이전트 초안 보존 · diff 평가용) ----
   @GetMapping("/projects/{id}/docs/{type}/revisions")
   fun docRevisions(@PathVariable id: String, @PathVariable type: String): List<DocRevisionDto> = docs.listRevisions(id, type)

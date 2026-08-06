@@ -1,5 +1,5 @@
-// 프로젝트 문서(PRD·IA) 클라이언트 — 서버 DB의 문서를 조회/생성/수정해요(영속).
-export type DocType = "prd" | "ia"
+// 프로젝트 문서(PRD·IA·코드 규칙) 클라이언트 — 서버 DB의 문서를 조회/생성/수정해요(영속).
+export type DocType = "prd" | "ia" | "rules"
 
 export type ProjectDoc = {
   projectId: string
@@ -49,6 +49,15 @@ export const saveDoc = (projectId: string, type: DocType, patch: DocPatch) =>
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(patch),
   })
+
+// ---- 코드 규칙 → 저장소 CLAUDE.md 동기화 — 코딩 에이전트가 매 작업마다 읽어요 ----
+export type RuleSync = {
+  results: { repo: string; ok: boolean; url: string | null; message: string | null }[]
+  docVersion: string
+}
+
+export const syncRulesToRepos = (projectId: string) =>
+  j<RuleSync>(`/api/mirror/projects/${projectId}/docs/rules/sync-repo`, { method: "POST" })
 
 // ---- 버전 이력 — 생성·수정 때마다 전문이 남아, 에이전트 초안과 현재 문서를 비교(diff)해요 ----
 export type DocRevision = {

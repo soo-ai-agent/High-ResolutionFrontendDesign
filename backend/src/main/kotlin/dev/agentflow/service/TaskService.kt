@@ -319,6 +319,7 @@ class TaskService(
     appendLine(t.detail.ifBlank { t.title })
     appendLine()
     appendLine("## 진행 방법")
+    appendLine("- 저장소에 CLAUDE.md 가 있으면 그 코드 작성 규칙을 반드시 따라 주세요.")
     appendLine("- 이 저장소에 브랜치를 만들어 구현하고 PR 을 올려 주세요.")
     appendLine("- PR 제목은 반드시 `[${t.code}]` 로 시작해 주세요 — 어드민이 이 작업에 자동으로 연결해요.")
     appendLine("- 구현이 끝나고 PR 이 머지되면 이 이슈를 닫아 주세요. 이슈가 닫히면 어드민에서 '검토 대기'가 되고, 완료 승인은 사람이 해요.")

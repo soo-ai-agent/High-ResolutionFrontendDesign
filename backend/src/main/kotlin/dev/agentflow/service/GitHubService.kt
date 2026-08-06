@@ -86,6 +86,24 @@ class GitHubService(
     return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), text)
   }
 
+  // 파일 쓰기(contents API) — 있으면 갱신(sha 필요), 없으면 생성. CLAUDE.md 동기화에 써요.
+  fun putFile(owner: String, repo: String, path: String, content: String, message: String): String {
+    val t = tokenOr401()
+    val existing = runCatching {
+      client.get().uri("/repos/{o}/{r}/contents/{p}", owner, repo, path).headers(auth(t)).retrieve().body(JsonNode::class.java)
+    }.getOrNull()
+    val sha = existing?.path("sha")?.asText()?.takeIf { it.isNotBlank() }
+    val payload = mutableMapOf<String, Any>(
+      "message" to message,
+      "content" to java.util.Base64.getEncoder().encodeToString(content.toByteArray(Charsets.UTF_8)),
+    )
+    if (sha != null) payload["sha"] = sha
+    val j = translate {
+      client.put().uri("/repos/{o}/{r}/contents/{p}", owner, repo, path).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(payload).retrieve().body(JsonNode::class.java)
+    }!!
+    return j.path("content").path("html_url").asText("")
+  }
+
   // ---- Actions 워크플로 — 목록 조회 · workflow_dispatch 실행 ----
   fun listWorkflows(owner: String, repo: String): List<WorkflowDto> {
     val t = tokenOr401()

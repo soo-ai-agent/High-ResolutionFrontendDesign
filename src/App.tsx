@@ -15,6 +15,7 @@ const SCREENS: Record<string, (nav: (r: string) => void, project: ProjectItem | 
   pipeline: (nav, project) => <Pipeline navigate={nav} project={project} />,
   prd: (_nav, project) => <ProjectDocScreen project={project} docType="prd" />,
   ia: (_nav, project) => <ProjectDocScreen project={project} docType="ia" />,
+  rules: (_nav, project) => <ProjectDocScreen project={project} docType="rules" />,
   tasks: (_nav, project) => <TasksScreen project={project} />,
   mirror: (nav) => <Mirror navigate={nav} />,
   "projects-board": () => <Board />,

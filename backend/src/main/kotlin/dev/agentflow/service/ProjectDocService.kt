@@ -9,6 +9,8 @@ import dev.agentflow.domain.ProjectRepository
 import dev.agentflow.dto.DocRevisionDto
 import dev.agentflow.dto.DocUpdateRequest
 import dev.agentflow.dto.ProjectDocDto
+import dev.agentflow.dto.RuleSyncItemDto
+import dev.agentflow.dto.RuleSyncResponse
 import dev.agentflow.dto.ProjectRepo
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -37,6 +39,7 @@ class ProjectDocService(
   private val specs: Map<String, DocSpec> = mapOf(
     "prd" to DocSpec("Planner Agent", PRD_SYSTEM, ::prdTemplate),
     "ia" to DocSpec("Design Agent", IA_SYSTEM, ::iaTemplate),
+    "rules" to DocSpec("Convention Agent", RULES_SYSTEM, ::rulesTemplate),
   )
 
   fun types(): Set<String> = specs.keys
@@ -92,6 +95,28 @@ class ProjectDocService(
     val saved = docs.save(e)
     snapshot(saved, "사람 수정")
     return saved.toDto()
+  }
+
+  // 코드 규칙 → 저장소 CLAUDE.md 동기화 — 코딩 에이전트가 매 작업마다 읽는 파일이라,
+  // 대시보드에서 확정한 규칙이 곧바로 모든 @claude 작업에 적용돼요.
+  fun syncRulesToRepos(projectId: String): RuleSyncResponse {
+    val doc = docs.findByProjectIdAndDocType(projectId, "rules")
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "코드 규칙 문서가 아직 없어요. 먼저 생성하세요.")
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    val results = project.repos.map { r ->
+      val (owner, name) = RepoCoords.of(project.org, r)
+      try {
+        val url = gitHub.putFile(
+          owner, name, "CLAUDE.md", doc.contentMd,
+          "docs: Agent Flow 코드 규칙 동기화 (${doc.docVersion})",
+        )
+        RuleSyncItemDto("$owner/$name", true, url)
+      } catch (e: ResponseStatusException) {
+        RuleSyncItemDto("$owner/$name", false, null, e.reason ?: e.message)
+      }
+    }
+    return RuleSyncResponse(results, doc.docVersion)
   }
 
   // ---- 버전 이력 — 리비전마다 전문이 남아 초안 대비 변경을 비교(diff)할 수 있어요 ----
@@ -222,6 +247,19 @@ class ProjectDocService(
       문서 본문만 출력하고 머리말·꼬리말은 붙이지 마세요.
     """.trimIndent()
 
+    private val RULES_SYSTEM = """
+      당신은 시니어 테크리드입니다. 주어진 프로젝트 정보와 저장소 코드 분석 자료를 근거로,
+      코딩 에이전트가 매 작업마다 따라야 할 한국어 코드 작성 규칙 문서를 마크다운으로 작성하세요.
+      이 문서는 저장소의 CLAUDE.md 로 저장돼 에이전트에게 직접 지시로 전달돼요 — 명령형으로 간결하게 쓰세요.
+      구조: 1. 공통 원칙(단순함 우선·기존 패턴 준수) / 2. 언어·프레임워크 규칙(실제 스택 기준) /
+      3. 네이밍·파일 구조 / 4. 커밋·PR 규칙(PR 제목 [T-00x] 접두 유지 포함) / 5. 테스트·검증 /
+      6. 금지 사항(하지 말 것 명시).
+      각 대주제는 반드시 `## ` 제목으로 시작하세요(화면에서 주제별로 쪼개 편집해요).
+      [저장소 코드 분석 자료]가 있으면 추측하지 말고 실제 파일 구조·매니페스트에서 확인되는
+      스택·컨벤션을 규칙으로 명문화하고, 자료에 없는 것은 일반 원칙만 간결히 적으세요.
+      문서 본문만 출력하고 머리말·꼬리말은 붙이지 마세요.
+    """.trimIndent()
+
     private val IA_SYSTEM = """
       당신은 시니어 프로덕트 디자이너입니다. 주어진 프로젝트 정보로 한국어 IA·화면설계 문서를 마크다운으로 작성하세요.
       구조: 1. 화면 구조 (IA) — 코드블록 트리 / 2. SCR 목록 — 표(SCR·라우트·화면·권한) / 3. 화면 흐름도 — 코드블록 /
@@ -305,6 +343,42 @@ $stackRows
 | SCR-101 | 프로젝트 현황 | 프로젝트 카드·요약 지표 |
 | SCR-201 | 프로젝트 상세 | 진행 단계·산출물 확인 |
 | ADM-001 | 운영 설정 | 연동·권한 관리 |
+    """.trimIndent()
+  }
+
+  private fun rulesTemplate(p: ProjectEntity): String {
+    val stacks = p.repos.joinToString("\n") { "- `${it.name}` (${it.purpose}): 저장소의 기존 컨벤션을 우선 따르세요." }
+    return """
+# 코드 작성 규칙: ${p.name}
+
+이 문서는 저장소 CLAUDE.md 로 동기화되어 코딩 에이전트가 매 작업마다 따라요. 자동 생성 초안이니 관리자가 수정해 확정하세요.
+
+## 1. 공통 원칙
+- 실제로 동작하는 가장 단순한 해법을 먼저 선택한다 (YAGNI).
+- 기존 코드의 패턴·네이밍·구조를 따르고, 새로운 스타일을 임의로 도입하지 않는다.
+- 요구된 범위만 구현한다 — 범위 밖 리팩터링은 별도 작업으로 제안한다.
+
+## 2. 언어·프레임워크 규칙
+$stacks
+- 의존성 추가는 꼭 필요할 때만 — 표준 라이브러리·기존 의존성으로 해결을 우선한다.
+
+## 3. 네이밍·파일 구조
+- 파일·디렉터리 구조는 저장소의 기존 배치를 따른다.
+- 이름은 역할이 드러나게 짓고, 축약어를 새로 만들지 않는다.
+
+## 4. 커밋·PR 규칙
+- PR 제목은 반드시 `[T-00x]` 작업 코드로 시작한다 — 어드민이 자동으로 작업에 연결한다.
+- 커밋 메시지는 "무엇을·왜"를 한 줄로 요약한다.
+- 구현이 끝나면 PR 로 연결 이슈를 닫는다.
+
+## 5. 테스트·검증
+- 빌드·린트·기존 테스트를 통과시킨 뒤 push 한다.
+- 동작 변경에는 검증 방법(테스트 또는 재현 절차)을 PR 설명에 남긴다.
+
+## 6. 금지 사항
+- 시크릿·토큰·키를 코드나 로그에 남기지 않는다.
+- CI 를 통과시키기 위한 테스트 비활성화·강제 머지를 하지 않는다.
+- 대규모 포맷팅 변경을 기능 변경과 섞지 않는다.
     """.trimIndent()
   }
 

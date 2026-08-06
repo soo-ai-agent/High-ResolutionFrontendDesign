@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react"
 import { Icon, IconButton, Button, Badge, Card, SectionTitle, EmptyState } from "../components/ui"
 import type { ProjectItem } from "../data"
-import { getDoc, generateDoc, saveDoc, splitDoc, joinDoc, listDocRevisions, getDocRevision, restoreDocRevision, type ProjectDoc, type DocType, type DocRevision } from "../lib/projectDocs"
+import { getDoc, generateDoc, saveDoc, splitDoc, joinDoc, listDocRevisions, getDocRevision, restoreDocRevision, syncRulesToRepos, type ProjectDoc, type DocType, type DocRevision } from "../lib/projectDocs"
 import { diffLines, type DiffOp } from "../lib/diff"
 
 const SOURCE_BADGE: Record<ProjectDoc["source"], { label: string; tone: "purple" | "neutral" | "blue" }> = {
@@ -14,6 +14,7 @@ const SOURCE_BADGE: Record<ProjectDoc["source"], { label: string; tone: "purple"
 const DOC_META: Record<DocType, { name: string; genDesc: string }> = {
   prd: { name: "PRD", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 요구사항 문서 초안을 만들어요." },
   ia: { name: "IA·화면설계", genDesc: "프로젝트 정보(이름·설명·저장소 구성)를 바탕으로 에이전트가 화면 구조(IA)·SCR 목록·화면별 상세 명세 초안을 만들어요." },
+  rules: { name: "코드 규칙", genDesc: "저장소 코드를 분석해 에이전트가 코드 작성 규칙 초안을 만들어요. 확정하면 저장소 CLAUDE.md 로 동기화되어 모든 @claude 작업에 적용돼요." },
 }
 
 export default function ProjectDocScreen({ project, docType }: { project: ProjectItem | null; docType: DocType }) {
@@ -31,6 +32,8 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
   const [meta, setMeta] = useState({ title: "", client: "", author: "" })
   // 버전 이력 — 에이전트 초안과 현재 문서를 비교(diff)해 평가해요.
   const [historyOpen, setHistoryOpen] = useState(false)
+  // 코드 규칙 전용 — 저장소 CLAUDE.md 동기화 결과 배너
+  const [syncNotice, setSyncNotice] = useState("")
 
   const blocks = useMemo(() => (doc ? splitDoc(doc.contentMd) : []), [doc])
 
@@ -87,6 +90,19 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
     URL.revokeObjectURL(a.href)
   }
 
+  const syncRules = async () => {
+    setBusy(true); setError(""); setSyncNotice("")
+    try {
+      const r = await syncRulesToRepos(project.id)
+      const ok = r.results.filter((x) => x.ok)
+      const fail = r.results.filter((x) => !x.ok)
+      setSyncNotice(
+        `✅ ${ok.length}개 저장소에 CLAUDE.md 동기화 완료 (${r.docVersion})` +
+        (fail.length ? ` · ⚠️ 실패 ${fail.length}: ${fail.map((f) => `${f.repo} — ${f.message ?? "오류"}`).join(", ")}` : ""),
+      )
+    } catch (e) { setError((e as Error).message) } finally { setBusy(false) }
+  }
+
   const jumpTo = (i: number) => {
     setActive(i)
     document.getElementById(`doc-sec-${i}`)?.scrollIntoView({ behavior: "smooth", block: "start" })
@@ -123,6 +139,9 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
         action={doc ? (
           <div className="flex items-center gap-2">
             <Badge tone={SOURCE_BADGE[doc.source].tone}>{SOURCE_BADGE[doc.source].label}</Badge>
+            {docType === "rules" && (
+              <Button variant="primary" size="sm" onClick={syncRules} disabled={busy} icon={<Icon name="github" className="h-4 w-4" />}>{busy ? "동기화 중…" : "저장소로 동기화 (CLAUDE.md)"}</Button>
+            )}
             <Button variant="secondary" size="sm" onClick={() => setHistoryOpen(true)} icon={<Icon name="list" className="h-4 w-4" />}>버전 이력</Button>
             <Button variant="secondary" size="sm" onClick={downloadMd} icon={<Icon name="download" className="h-4 w-4" />}>MD 다운로드</Button>
             <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 생성"}</Button>
@@ -131,6 +150,7 @@ export default function ProjectDocScreen({ project, docType }: { project: Projec
       />
 
       {error && <div className="rounded-[12px] bg-error-light px-4 py-3 text-[13px] font-semibold text-error">{error}</div>}
+      {syncNotice && <div className="rounded-[12px] bg-success-light px-4 py-3 text-[13px] font-semibold text-success">{syncNotice}</div>}
 
       {loading ? (
         <Card className="p-10 text-center text-[13px] text-text-tertiary">문서를 불러오는 중…</Card>
