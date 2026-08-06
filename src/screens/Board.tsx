@@ -89,7 +89,7 @@ export default function Board() {
 
       <div className="flex flex-wrap items-center gap-2 rounded-[12px] bg-surface-2 px-4 py-2.5 text-[12px] text-text-secondary">
         <Icon name="board" className="h-4 w-4 text-text-tertiary" />
-        <span><b className="text-text-primary">뷰 전용</b> — 카드는 GitHub 이벤트로 자동 이동해요. 실제 보드 이동은 <code className="font-mono">projects_v2_item</code>로 반영돼요(<span className="font-bold text-success">보드 반영</span>).</span>
+        <span><b className="text-text-primary">뷰 전용</b> — 카드는 GitHub 이벤트로 자동 이동해요. 실제 보드 이동은 <code className="font-mono">projects_v2_item</code>로 반영되고(<span className="font-bold text-success">보드 반영</span>), GitHub Projects에서 카드를 <b className="text-purple">In Progress</b>로 옮기면 매칭된 대기 중 AI 작업이 <b className="text-purple">자동 착수</b>돼요.</span>
         <span className="mx-1 text-line-strong">·</span>
         <span>집계 저장소 <b className="text-text-primary">{repos.length}</b>개</span>
       </div>

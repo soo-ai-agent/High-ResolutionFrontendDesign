@@ -20,6 +20,7 @@ import dev.agentflow.dto.TaskPullDto
 import dev.agentflow.dto.TaskReviewRequest
 import dev.agentflow.util.Json
 import dev.agentflow.util.RepoCoords
+import org.springframework.context.event.EventListener
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
 import org.springframework.web.server.ResponseStatusException
@@ -119,8 +120,36 @@ class TaskService(
       "검토 대기" -> throw ResponseStatusException(HttpStatus.CONFLICT, "검토 대기 중이에요 — 보완이 필요하면 피드백으로 재개하세요.")
     }
     val (project, _, _) = coordsOf(projectId, t)
-    startTask(project, t, auto = false)
+    startTask(project, t)
     return t.toDto()
+  }
+
+  // 보드 이동 트리거(B안) — GitHub Projects 카드가 In Progress 로 이동하면, 그 이슈에
+  // 매칭되는 대기 중 ai 작업을 자동 착수해요. 이슈 미연결이면 제목의 [T-00x] 로 먼저 연결.
+  // 착수 실패(PAT 미연결 등)는 웹훅 처리를 막지 않게 조용히 넘겨요.
+  @EventListener
+  fun onBoardMoved(e: BoardStatusMoved) {
+    if (e.boardStatus.trim().lowercase() !in setOf("in progress", "in-progress")) return
+    runCatching {
+      projects.findAll().forEach { p ->
+        val repoName = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == e.repo }?.name
+          ?: return@forEach
+        val all = tasks.findByProjectIdOrderBySeq(p.id).filter { it.repo == repoName }
+        val code = e.title?.let { Regex("""\[(T-\d{3})\]""").find(it)?.groupValues?.get(1) }
+        val t = all.firstOrNull { it.issueNumber == e.number }
+          ?: code?.let { c -> all.firstOrNull { it.code == c && it.issueNumber == null } }
+          ?: return@forEach
+        if (t.owner != "ai" || t.status != "대기") return@forEach
+        if (t.issueNumber == null) {
+          t.issueNumber = e.number
+          t.issueUrl = e.htmlUrl
+          t.lastIssueState = e.issueState
+          record(t.id, "이슈 연결", "보드 카드의 이슈 #${e.number} 연결 (제목 매칭)")
+        }
+        record(t.id, "보드 트리거", "GitHub Projects 카드 '${e.boardStatus}' 이동 감지 → 자동 착수")
+        startTask(p, t, via = "보드 트리거 — ")
+      }
+    }
   }
 
   // ---- 자동 디스패치 — 단계 순서(스키마→…→릴리즈) 안에서 우선순위(P1→P3)·seq 순으로,
@@ -159,7 +188,7 @@ class TaskService(
     var failMsg: String? = null
     for (t in candidates.take(slots)) {
       try {
-        startTask(project, t, auto = true)
+        startTask(project, t, via = "자동 디스패치 — ")
         started += t
       } catch (e: ResponseStatusException) {
         failMsg = "착수 실패 (${t.code}): ${e.reason ?: e.message}"
@@ -197,8 +226,9 @@ class TaskService(
 
   private fun priorityRank(p: String): Int = when (p) { "P1" -> 0; "P2" -> 1; "P3" -> 2; else -> 3 }
 
-  // 착수 공통 경로 — 이슈 보장 + @claude 지시 + 진행 중 전환. kickoff(수동)과 디스패치(자동)가 함께 써요.
-  private fun startTask(project: ProjectEntity, t: TaskEntity, auto: Boolean) {
+  // 착수 공통 경로 — 이슈 보장 + @claude 지시 + 진행 중 전환.
+  // kickoff(수동)·자동 디스패치·보드 트리거가 함께 쓰고, via 로 경로를 활동 이력에 남겨요.
+  private fun startTask(project: ProjectEntity, t: TaskEntity, via: String = "") {
     val repo = project.repos.firstOrNull { it.name == t.repo }
       ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "태스크의 담당 저장소(${t.repo})가 프로젝트에 없어요.")
     val (owner, name) = RepoCoords.of(project.org, repo)
@@ -206,7 +236,7 @@ class TaskService(
     gitHub.claudeComment(owner, name, t.issueNumber!!, kickoffPrompt(project, t))
     t.status = "진행 중"
     t.updatedAt = Instant.now().toString()
-    record(t.id, "착수", (if (auto) "자동 디스패치 — " else "") + "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
+    record(t.id, "착수", via + "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
     tasks.save(t)
   }
 

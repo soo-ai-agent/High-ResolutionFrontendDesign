@@ -4,9 +4,21 @@ import com.fasterxml.jackson.databind.JsonNode
 import dev.agentflow.domain.*
 import dev.agentflow.dto.*
 import dev.agentflow.util.Json
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
 import java.time.Instant
+
+// 보드 이동 이벤트 — GitHub Projects 카드의 Status 변경이 미러에 반영될 때 발행돼요.
+// TaskService 가 구독해 In Progress 이동 시 매칭 작업을 자동 착수해요(순환 의존 없이).
+data class BoardStatusMoved(
+  val repo: String,
+  val number: Long,
+  val title: String?,
+  val htmlUrl: String?,
+  val issueState: String?,
+  val boardStatus: String,
+)
 
 @Service
 @Transactional
@@ -19,6 +31,7 @@ class MirrorService(
   private val events: EventRepository,
   private val projects: ProjectRepository,
   private val meta: MetaRepository,
+  private val publisher: ApplicationEventPublisher,
 ) {
   private fun nowIso(): String = Instant.now().toString()
   private fun touch() = meta.save(MetaEntity("meta", nowIso()))
@@ -70,10 +83,15 @@ class MirrorService(
     board.save(e); touch()
   }
 
-  // 실제 보드 이동 반영: nodeId 로 이슈/PR을 찾아 boardStatus 갱신
+  // 실제 보드 이동 반영: nodeId 로 이슈/PR을 찾아 boardStatus 갱신.
+  // 이슈 카드는 이동 이벤트를 발행해요 — In Progress 이동이면 매칭 작업이 자동 착수돼요(B안).
   fun setBoardStatusByNode(nodeId: String?, status: String?) {
     if (nodeId.isNullOrBlank()) return
-    issues.findByNodeId(nodeId)?.let { it.boardStatus = status; it.boardUpdatedAt = nowIso(); issues.save(it); touch(); return }
+    issues.findByNodeId(nodeId)?.let {
+      it.boardStatus = status; it.boardUpdatedAt = nowIso(); issues.save(it); touch()
+      if (status != null) publisher.publishEvent(BoardStatusMoved(it.repo, it.number, it.title, it.htmlUrl, it.state, status))
+      return
+    }
     pulls.findByNodeId(nodeId)?.let { it.boardStatus = status; it.boardUpdatedAt = nowIso(); pulls.save(it); touch() }
   }
 
