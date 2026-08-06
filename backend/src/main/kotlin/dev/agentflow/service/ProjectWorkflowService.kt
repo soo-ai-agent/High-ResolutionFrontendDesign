@@ -21,8 +21,14 @@ class ProjectWorkflowService(
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
     return project.repos.mapNotNull { r ->
       val (owner, name) = RepoCoords.of(project.org, r)
-      // 접근 불가한 저장소는 조용히 건너뛰어요 — 나머지 저장소 목록은 계속 보여줘야 하니까.
-      val flows = runCatching { gitHub.listWorkflows(owner, name) }.getOrNull() ?: return@mapNotNull null
+      // 접근 불가(404·403)한 저장소는 조용히 건너뛰되, PAT 미연결(401)은 삼키지 않아요 —
+      // "워크플로 없음"이 아니라 "연결 필요"로 안내해야 하니까.
+      val flows = try {
+        gitHub.listWorkflows(owner, name)
+      } catch (e: ResponseStatusException) {
+        if (e.statusCode.value() == 401) throw e
+        return@mapNotNull null
+      }
       RepoWorkflowsDto("$owner/$name", r.name, flows.filter { it.state == "active" })
     }
   }
