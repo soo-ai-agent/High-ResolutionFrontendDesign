@@ -1,0 +1,87 @@
+# Claude 코딩 에이전트 — GitLab CI 버전 (.github/workflows/claude.yml 의 대응물)
+#
+# GitHub 와의 구조 차이:
+#   GitHub 는 이슈/PR 코멘트(@claude)가 워크플로를 직접 깨우지만, GitLab 에는
+#   "코멘트 생성" 파이프라인 트리거가 없어요. 대신 Agent Flow 서버(또는 노트 웹훅
+#   브리지)가 Pipeline Trigger API 로 지시를 변수에 담아 이 잡을 실행해요:
+#
+#     POST https://<gitlab>/api/v4/projects/<id>/trigger/pipeline
+#       token=<트리거 토큰> & ref=<기본 브랜치>
+#       variables[CLAUDE_PROMPT]        = 작업/리뷰/수정 지시 (필수)
+#       variables[CLAUDE_BRANCH]        = 작업 브랜치 (선택 — 있으면 이어서 작업, 없으면 새로 생성)
+#       variables[CLAUDE_TASK_CODE]     = 작업 코드 T-00x (선택 — MR 제목 접두에 사용)
+#       variables[CLAUDE_CONTEXT_TYPE]  = issue | mr   (선택 — 결과 코멘트를 남길 곳)
+#       variables[CLAUDE_CONTEXT_IID]   = 이슈/MR IID  (선택)
+#
+# 준비물 (대상 GitLab 프로젝트):
+#   1) Settings → CI/CD → Variables (Masked):
+#        ANTHROPIC_API_KEY  — Claude API 키
+#        GITLAB_TOKEN       — api scope PAT(또는 프로젝트 액세스 토큰) — push·MR·코멘트용
+#   2) Settings → CI/CD → Pipeline trigger tokens 에서 트리거 토큰 발급
+#      → Agent Flow(깃랩 어댑터)에 등록하면 착수·피드백·리뷰·CI 회복 지시가 이 잡으로 들어와요.
+#   3) 대상 저장소 .gitlab-ci.yml 에 포함:
+#        include:
+#          - local: .gitlab/claude.gitlab-ci.yml
+#
+# 동작: CLAUDE_PROMPT 가 있을 때만 실행 → Claude Code(헤드리스)가 저장소를 읽고
+#   CLAUDE.md 규칙을 따라 구현/리뷰 → 변경이 있으면 브랜치에 커밋·push + MR 생성
+#   → 결과 요약을 이슈/MR 코멘트로 회신. 머지는 사람이 해요.
+
+claude:
+  stage: .post # 다른 스테이지와 독립 — 트리거 변수로만 실행돼요
+  image: node:22
+  rules:
+    - if: '$CLAUDE_PROMPT' # 지시가 있을 때만 (일반 push/MR 파이프라인에선 스킵)
+  variables:
+    GIT_DEPTH: "0" # 전체 이력 — 에이전트가 컨텍스트를 충분히 보게
+  timeout: 30m
+  before_script:
+    - npm install -g @anthropic-ai/claude-code
+    - git config user.name "Claude"
+    - git config user.email "claude@anthropic.com"
+    # push 권한이 있는 원격으로 교체 (CI_JOB_TOKEN 은 push 불가)
+    - git remote set-url origin "https://oauth2:${GITLAB_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+  script:
+    # 1) 작업 브랜치 — 지정되면 이어서(리뷰 수정·피드백 재개), 없으면 새로 생성(착수)
+    - BRANCH="${CLAUDE_BRANCH:-claude/${CLAUDE_TASK_CODE:-work}-${CI_PIPELINE_ID}}"
+    - git fetch origin "$BRANCH" 2>/dev/null && git checkout -B "$BRANCH" "origin/$BRANCH" || git checkout -b "$BRANCH"
+    # 2) Claude 실행 (헤드리스) — 저장소의 CLAUDE.md 규칙을 자동으로 읽어요
+    - claude -p "$CLAUDE_PROMPT" --permission-mode acceptEdits --output-format text | tee /tmp/claude-out.txt
+    # 3) 변경이 있으면 커밋·push + MR 보장 (제목 [T-00x] 접두 — 어드민이 자동 연결해요)
+    - |
+      if [ -n "$(git status --porcelain)" ]; then
+        git add -A
+        git commit -m "${CLAUDE_TASK_CODE:+[$CLAUDE_TASK_CODE] }Claude 자동 변경"
+        git push -u origin "$BRANCH" -o ci.skip
+        EXISTING=$(curl -s --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests?source_branch=${BRANCH}&state=opened" | grep -c '"iid"' || true)
+        if [ "$EXISTING" = "0" ]; then
+          curl -s --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests" \
+            --data-urlencode "source_branch=${BRANCH}" \
+            --data-urlencode "target_branch=${CI_DEFAULT_BRANCH}" \
+            --data-urlencode "title=${CLAUDE_TASK_CODE:+[$CLAUDE_TASK_CODE] }Claude 자동 변경" \
+            --data-urlencode "description=Claude 코딩 에이전트가 생성한 MR 이에요. 머지는 사람이 결정해요." >/dev/null
+          echo "MR 생성됨 (${BRANCH} → ${CI_DEFAULT_BRANCH})"
+        fi
+      else
+        echo "변경 없음 — 리뷰/분석만 수행"
+      fi
+    # 4) 결과 요약을 이슈/MR 코멘트로 회신 (컨텍스트가 지정된 경우)
+    - |
+      if [ -n "$CLAUDE_CONTEXT_IID" ]; then
+        case "$CLAUDE_CONTEXT_TYPE" in
+          mr) NOTES_PATH="merge_requests/${CLAUDE_CONTEXT_IID}/notes" ;;
+          *)  NOTES_PATH="issues/${CLAUDE_CONTEXT_IID}/notes" ;;
+        esac
+        SUMMARY=$(tail -c 3000 /tmp/claude-out.txt)
+        curl -s --request POST --header "PRIVATE-TOKEN: $GITLAB_TOKEN" \
+          "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/${NOTES_PATH}" \
+          --data-urlencode "body=🤖 Claude 실행 결과${CLAUDE_TASK_CODE:+ [$CLAUDE_TASK_CODE]}:
+
+      ${SUMMARY}" >/dev/null
+      fi
+  artifacts:
+    paths: [/tmp/claude-out.txt]
+    when: always
+    expire_in: 7 days
