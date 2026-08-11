@@ -56,6 +56,7 @@ class MirrorService(
   private val events: EventRepository,
   private val projects: ProjectRepository,
   private val meta: MetaRepository,
+  private val comments: CommentRepository,
   private val publisher: ApplicationEventPublisher,
 ) {
   private fun nowIso(): String = Instant.now().toString()
@@ -131,12 +132,30 @@ class MirrorService(
     return e.toDto()
   }
 
+  private fun upsertComment(repo: String, c: JsonNode, issueNumber: Long, kind: String, action: String?) {
+    val cid = c.path("id").asLong()
+    if (cid <= 0 || repo.isBlank()) return
+    val k = "$repo#c$cid"
+    if (action == "deleted") { runCatching { comments.deleteById(k) }; return }
+    val e = comments.findById(k).orElse(CommentEntity(id = k))
+    e.repo = repo; e.issueNumber = issueNumber; e.kind = kind
+    e.user = c.path("user").str("login")
+    e.body = c.str("body")?.take(2000) ?: ""
+    e.htmlUrl = c.str("html_url")
+    e.createdAt = c.str("created_at") ?: e.createdAt
+    comments.save(e); touch()
+  }
+
+  @Transactional(readOnly = true)
+  fun listComments(repo: String, issueNumber: Long): List<CommentEntity> =
+    comments.findByRepoAndIssueNumberOrderByCreatedAtDesc(repo, issueNumber)
+
   fun logEvent(deliveryId: String?, event: String, action: String?, repo: String?, verified: Boolean, summary: String) {
     events.save(EventEntity(deliveryId = deliveryId, event = event, action = action, repo = repo, at = nowIso(), verified = verified, summary = summary))
   }
 
   fun reset() {
-    issues.deleteAll(); pulls.deleteAll(); runs.deleteAll(); board.deleteAll(); repos.deleteAll(); events.deleteAll()
+    issues.deleteAll(); pulls.deleteAll(); runs.deleteAll(); board.deleteAll(); repos.deleteAll(); events.deleteAll(); comments.deleteAll()
     meta.save(MetaEntity("meta", nowIso()))
   }
 
@@ -158,6 +177,18 @@ class MirrorService(
           publisher.publishEvent(IssueDecomposeRequested(repoFull ?: "", i.path("number").asLong(), i.str("title"), i.str("body"), i.str("html_url"), labelsOf(i.path("labels"))))
           summary += " · 분해 요청"
         }
+      }
+      // 코멘트 미러 — 이슈·PR 대화(issue_comment)와 PR 리뷰 라인 코멘트를 저장해요.
+      // 에이전트의 리뷰·결과 코멘트가 인사이트 패널에 보이게 하는 근거 데이터예요.
+      event == "issue_comment" && payload.has("comment") -> {
+        val n = payload.path("issue").path("number").asLong()
+        upsertComment(repoFull ?: "", payload.path("comment"), n, "issue", payload.str("action"))
+        summary = "comment on #$n ${payload.str("action") ?: ""}".trim()
+      }
+      event == "pull_request_review_comment" && payload.has("comment") -> {
+        val n = payload.path("pull_request").path("number").asLong()
+        upsertComment(repoFull ?: "", payload.path("comment"), n, "review", payload.str("action"))
+        summary = "review comment on PR #$n"
       }
       event == "pull_request" && payload.has("pull_request") -> {
         val p = payload.path("pull_request")

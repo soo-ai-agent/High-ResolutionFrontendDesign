@@ -96,6 +96,21 @@ export default function Board() {
     }
   }
 
+  // 이슈 → 작업 승격 — 어드민 밖에서 만든 이슈를 정식 [T-00x] 작업으로 가져와요.
+  const adopt = async (c: BoardCard) => {
+    setBusyKey(c.key)
+    setNotice("")
+    try {
+      const r = await mirror.adoptIssue(c.repo, c.number)
+      setNotice(`✅ ${r.message}`)
+      await load()
+    } catch (ex) {
+      setNotice(`⚠️ ${ex instanceof Error ? ex.message : String(ex)}`)
+    } finally {
+      setBusyKey("")
+    }
+  }
+
   return (
     <div className="space-y-6">
       <SectionTitle
@@ -142,7 +157,7 @@ export default function Board() {
                     <span className="rounded-full bg-[#eef1f4] px-2 py-0.5 text-[11px] font-bold text-text-tertiary">{items.length}</span>
                   </div>
                   <div className="space-y-3">
-                    {items.map((c) => <BoardCardView key={c.key} card={c} showRepo={repoFilter === "all"} onKickoff={kickoff} busy={busyKey === c.key} />)}
+                    {items.map((c) => <BoardCardView key={c.key} card={c} showRepo={repoFilter === "all"} onKickoff={kickoff} onAdopt={adopt} busy={busyKey === c.key} />)}
                     {items.length === 0 && <div className="rounded-[12px] border border-dashed border-line py-8 text-center text-[12px] text-text-disabled">비어 있음</div>}
                   </div>
                 </div>
@@ -155,9 +170,11 @@ export default function Board() {
   )
 }
 
-function BoardCardView({ card, showRepo, onKickoff, busy }: { card: BoardCard; showRepo: boolean; onKickoff: (c: BoardCard) => void; busy: boolean }) {
+function BoardCardView({ card, showRepo, onKickoff, onAdopt, busy }: { card: BoardCard; showRepo: boolean; onKickoff: (c: BoardCard) => void; onAdopt: (c: BoardCard) => void; busy: boolean }) {
   // 시작 전 컬럼의 이슈 카드만 착수 버튼을 보여줘요 — 진행·리뷰·완료 카드는 대상 아님.
   const startable = card.kind === "이슈" && (card.column === "Backlog" || card.column === "Todo")
+  // [T-00x] 접두가 없는 이슈 = 어드민 작업 계획 밖의 이슈 — 승격(가져오기) 대상.
+  const adoptable = startable && !/^\[T-\d{3}\]/.test(card.title)
   return (
     <a href={card.url} target="_blank" rel="noreferrer" className="block rounded-[12px] border border-line bg-surface p-3.5 transition-colors hover:border-line-strong hover:bg-hover">
       <div className="flex items-center gap-2 text-[12px]">
@@ -177,13 +194,25 @@ function BoardCardView({ card, showRepo, onKickoff, busy }: { card: BoardCard; s
         </div>
       )}
       {startable && (
-        <button
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onKickoff(card) }}
-          disabled={busy}
-          className="mt-2.5 flex w-full items-center justify-center gap-1 rounded-[8px] bg-blue-light py-1.5 text-[11px] font-bold text-blue hover:brightness-95 disabled:opacity-50"
-        >
-          <Icon name="sparkle" className="h-3 w-3" />{busy ? "착수 중…" : "에이전트 착수"}
-        </button>
+        <div className="mt-2.5 flex gap-1.5">
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onKickoff(card) }}
+            disabled={busy}
+            className="flex flex-1 items-center justify-center gap-1 rounded-[8px] bg-blue-light py-1.5 text-[11px] font-bold text-blue hover:brightness-95 disabled:opacity-50"
+          >
+            <Icon name="sparkle" className="h-3 w-3" />{busy ? "처리 중…" : "에이전트 착수"}
+          </button>
+          {adoptable && (
+            <button
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); onAdopt(card) }}
+              disabled={busy}
+              title="이 이슈를 어드민 작업 계획의 [T-00x] 작업으로 가져와요 (착수는 하지 않아요)"
+              className="flex flex-1 items-center justify-center gap-1 rounded-[8px] bg-surface-2 py-1.5 text-[11px] font-bold text-text-secondary hover:bg-hover disabled:opacity-50"
+            >
+              <Icon name="plus" className="h-3 w-3" />작업으로 가져오기
+            </button>
+          )}
+        </div>
       )}
     </a>
   )

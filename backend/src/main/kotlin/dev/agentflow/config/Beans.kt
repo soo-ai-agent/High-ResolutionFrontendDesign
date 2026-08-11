@@ -12,9 +12,15 @@ import javax.crypto.spec.SecretKeySpec
 class AppProps {
   var githubApiBase: String = "https://api.github.com"
   var webhookSecret: String = ""
+
+  // 로컬 브리지 — 클론 원격 베이스(테스트에선 file:// 경로로 바꿔요)와 에이전트 실행 명령.
+  // 명령이 비어 있으면 LocalBridgeService.DEFAULT_COMMAND(claude CLI 헤드리스)를 써요.
+  var bridgeGitBase: String = "https://github.com"
+  var bridgeCommand: String = ""
 }
 
-// PAT는 서버 메모리에만 보관 (프로토타입 · 단일 사용자). 프로세스 재시작 시 사라져요.
+// PAT 런타임 캐시 (단일 사용자). 영속화는 SettingService(데이터 폴더 DB)가 담당 —
+// GitHubService 가 연결 시 저장하고 부팅 시 복원해요.
 @Component
 class GitHubTokenStore {
   @Volatile

@@ -33,6 +33,14 @@ export const boardKickoff = (repo: string, number: number) =>
     body: JSON.stringify({ repo, number }),
   })
 
+// 이슈 → 작업 승격(가져오기) — 어드민 밖에서 만든 이슈를 정식 [T-00x] 작업으로 편입해요.
+export const adoptIssue = (repo: string, number: number) =>
+  j<BoardKickoff>("/api/mirror/board/adopt", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ repo, number }),
+  })
+
 export const getSummary = () => j<MirrorSummary>("/api/mirror/summary")
 export const listIssues = (repo?: string) => j<MirrorIssue[]>("/api/mirror/issues" + (repo ? `?repo=${encodeURIComponent(repo)}` : ""))
 export const listPulls = (repo?: string) => j<MirrorPull[]>("/api/mirror/pulls" + (repo ? `?repo=${encodeURIComponent(repo)}` : ""))

@@ -28,6 +28,9 @@ spring:
 agentflow:
   github-api-base: ${GITHUB_API_BASE:https://api.github.com}
   webhook-secret: ${GITHUB_WEBHOOK_SECRET:}
+  # 로컬 브리지 — Actions 없이 서버 머신에서 claude CLI 를 직접 실행하는 모드의 설정.
+  bridge-git-base: ${BRIDGE_GIT_BASE:https://github.com}
+  bridge-command: ${BRIDGE_COMMAND:}
 
 ---
 # prod: DataSource 는 DataSourceConfig 빈이 DATABASE_URL(jdbc 또는 postgres:// DSN)에서 구성해요.

@@ -52,9 +52,7 @@ export default function Projects({ navigate, onOpen }: { navigate: (r: string) =
               <span className="text-[12px] font-semibold text-[#b47908]">GitHub 연결 필요</span>
             </button>
           )}
-          <IconButton label="알림"><Icon name="bell" /></IconButton>
-          <IconButton label="도움말"><Icon name="help" /></IconButton>
-          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white">SB</button>
+          <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" title={connected ? "GitHub 연결됨" : "GitHub 미연결"}>{connected ? "GH" : "—"}</button>
         </div>
       </header>
 
@@ -178,7 +176,6 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
   const [org, setOrg] = useState("sample-org")
   const [repos, setRepos] = useState<{ name: string; purpose: string; url?: string }[]>([{ name: "", purpose: "프론트엔드" }])
   const [domains, setDomains] = useState<string[]>(["admin", "auth"])
-  const [integ, setInteg] = useState({ github: true, supabase: true, slack: false })
 
   const canNext = step === 0 ? name.trim().length > 0 : step === 1 ? repos.some((r) => r.name.trim()) : true
   const next = () => setStep((s) => Math.min(s + 1, WIZARD_STEPS.length - 1))
@@ -321,10 +318,12 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
                 <p className="mt-1 text-[12px] leading-relaxed text-text-secondary">스키마·프론트·백엔드·QA는 <RoleChip owner="ai" /> <RoleChip owner="auto" />가 자동으로 진행하고, 외부 키 발급·배포 승인처럼 사람만 할 수 있는 일은 <RoleChip owner="human" /> <b className="text-[#b47908]">휴먼태스크</b>로 따로 모여요. 사람은 휴먼태스크만 신경 쓰면 됩니다.</p>
               </div>
               <Field label="외부 연동">
-                <div className="space-y-2">
-                  <IntegRow icon="github" title="GitHub" desc="저장소·Actions·PR 연동 (필수)" on={integ.github} disabled onChange={() => {}} />
-                  <IntegRow icon="board" title="Supabase" desc="스키마·데이터베이스 프로비저닝" on={integ.supabase} onChange={() => setInteg((s) => ({ ...s, supabase: !s.supabase }))} />
-                  <IntegRow icon="chat" title="Slack" desc="휴먼태스크·이슈 알림 수신" on={integ.slack} onChange={() => setInteg((s) => ({ ...s, slack: !s.slack }))} />
+                <div className="flex items-center gap-3 rounded-[10px] border border-line px-4 py-3">
+                  <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2"><Icon name="github" className="h-4.5 w-4.5 text-text-secondary" /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 text-[14px] font-semibold text-text-primary">GitHub<Badge tone="neutral">필수</Badge></div>
+                    <div className="text-[12px] text-text-tertiary">저장소·Actions·PR 연동 — 설정 › 연동의 PAT 를 사용해요. 다른 연동(Supabase·Slack 등)은 아직 지원하지 않아요.</div>
+                  </div>
                 </div>
               </Field>
             </div>
@@ -339,7 +338,7 @@ function AddProjectModal({ onClose, onCreate }: { onClose: () => void; onCreate:
                   <SumRow label="조직" value={org} />
                   <SumRow label="저장소" value={validRepos.length ? validRepos.map((r) => r.name).join(", ") : "없음"} />
                   <SumRow label="도메인" value={domains.length ? domains.join(", ") : "없음"} />
-                  <SumRow label="연동" value={[integ.github && "GitHub", integ.supabase && "Supabase", integ.slack && "Slack"].filter(Boolean).join(", ")} />
+                  <SumRow label="연동" value="GitHub" />
                 </div>
               </div>
               <div className="flex items-start gap-2 rounded-[12px] bg-blue-light p-4">
@@ -381,15 +380,3 @@ function SumRow({ label, value }: { label: string; value: string }) {
   )
 }
 
-function IntegRow({ icon, title, desc, on, onChange, disabled }: { icon: string; title: string; desc: string; on: boolean; onChange: () => void; disabled?: boolean }) {
-  return (
-    <div className="flex items-center gap-3 rounded-[10px] border border-line px-4 py-3">
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-surface-2"><Icon name={icon} className="h-4.5 w-4.5 text-text-secondary" /></span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-1.5 text-[14px] font-semibold text-text-primary">{title}{disabled && <Badge tone="neutral">필수</Badge>}</div>
-        <div className="text-[12px] text-text-tertiary">{desc}</div>
-      </div>
-      <Toggle on={on} onChange={disabled ? undefined : onChange} />
-    </div>
-  )
-}

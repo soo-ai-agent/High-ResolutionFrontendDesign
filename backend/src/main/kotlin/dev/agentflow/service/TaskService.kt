@@ -1,5 +1,6 @@
 package dev.agentflow.service
 
+import dev.agentflow.domain.CommentRepository
 import dev.agentflow.domain.IssueRepository
 import dev.agentflow.domain.ProjectDocRepository
 import dev.agentflow.domain.ProjectEntity
@@ -15,6 +16,7 @@ import dev.agentflow.dto.GanttRowDto
 import dev.agentflow.dto.DispatchStatusDto
 import dev.agentflow.dto.IssueCreateRequest
 import dev.agentflow.dto.TaskActivityDto
+import dev.agentflow.dto.TaskCommentDto
 import dev.agentflow.dto.TaskDto
 import dev.agentflow.dto.TaskInsightDto
 import dev.agentflow.dto.TaskPatchRequest
@@ -38,9 +40,11 @@ class TaskService(
   private val docs: ProjectDocRepository,
   private val llm: LlmService,
   private val gitHub: GitHubService,
+  private val dispatcher: AgentDispatchService,
   private val activities: TaskActivityRepository,
   private val issues: IssueRepository,
   private val pulls: PullRepository,
+  private val comments: CommentRepository,
 ) {
   fun list(projectId: String): List<TaskDto> {
     val project = projects.findById(projectId).orElse(null) ?: return emptyList()
@@ -157,8 +161,43 @@ class TaskService(
     }
     // 작업 계획 매칭 없음 — 일반 이슈에 바로 지시
     val (owner, name) = repoFull.split("/", limit = 2).let { it[0] to it[1] }
-    gitHub.claudeComment(owner, name, number, genericIssuePrompt(issue?.title))
-    return BoardKickoffResponse("issue", null, "이슈 #$number 에 @claude 지시를 보냈어요 (작업 계획 매칭 없음).")
+    val how = dispatcher.instruct(owner, name, number, genericIssuePrompt(issue?.title))
+    return BoardKickoffResponse("issue", null, "이슈 #$number 에 지시를 보냈어요 ($how · 작업 계획 매칭 없음).")
+  }
+
+  // 이슈 → 작업 승격(가져오기) — 어드민 밖에서 만들어진 기존 이슈를 정식 [T-00x] 작업으로
+  // 가져와요. 새 GitHub 이슈를 만들지 않고 그 이슈에 연결하고, 본문은 API 로 읽어(실패 시
+  // 제목만) 상세로 써요. 착수는 하지 않아요 — 이후는 착수 버튼·디스패치가 이어받아요.
+  fun adoptIssue(repoFull: String, number: Long): BoardKickoffResponse {
+    if (repoFull.isBlank() || !repoFull.contains("/") || number <= 0)
+      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "repo(owner/이름)·number 가 필요해요.")
+    val issue = issues.findByRepoAndNumber(repoFull, number)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "미러에 없는 이슈예요 — 먼저 웹훅/백필로 동기화되어야 해요.")
+    for (p in projects.findAll()) {
+      val repoName = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == repoFull }?.name
+        ?: continue
+      val existing = tasks.findByProjectIdOrderBySeq(p.id)
+      existing.firstOrNull { it.repo == repoName && it.issueNumber == number }?.let {
+        throw ResponseStatusException(HttpStatus.CONFLICT, "이미 ${it.code} 작업으로 연결돼 있어요.")
+      }
+      val seq = (existing.maxOfOrNull { it.seq } ?: 0) + 1
+      val codeNum = (existing.mapNotNull { Regex("""T-(\d+)""").find(it.code)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 0) + 1
+      val (owner, name) = repoFull.split("/", limit = 2).let { it[0] to it[1] }
+      val body = gitHub.issueBody(owner, name, number)
+      val phase = if (p.repos.firstOrNull { it.name == repoName }?.purpose == "프론트엔드") "프론트엔드" else "백엔드"
+      val t = TaskEntity(
+        id = "${p.id}:$seq", projectId = p.id, seq = seq, code = "T-%03d".format(codeNum),
+        title = issue.title?.replace(Regex("""^\[T-\d{3}\]\s*"""), "")?.ifBlank { null } ?: "이슈 #$number",
+        detail = (body ?: "").take(2000).ifBlank { issue.title ?: "" },
+        phase = phase, repo = repoName, owner = "ai",
+        issueNumber = number, issueUrl = issue.htmlUrl, lastIssueState = issue.state,
+        source = "human", updatedAt = Instant.now().toString(),
+      )
+      val s = tasks.save(t)
+      record(s.id, "가져오기", "기존 이슈 #$number 를 작업으로 승격")
+      return BoardKickoffResponse("task", s.toDto(), "이슈 #$number 를 ${s.code} 작업으로 가져왔어요 — 착수는 착수 버튼·디스패치가 이어받아요.")
+    }
+    throw ResponseStatusException(HttpStatus.NOT_FOUND, "이 저장소를 포함하는 프로젝트가 없어요.")
   }
 
   private fun genericIssuePrompt(title: String?) = buildString {
@@ -177,6 +216,7 @@ class TaskService(
     if (e.boardStatus.trim().lowercase() !in setOf("in progress", "in-progress")) return
     runCatching {
       projects.findAll().forEach { p ->
+        if (!p.boardAutoStart) return@forEach // 보드 트리거 꺼짐 — 이동은 미러에만 반영
         val repoName = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == e.repo }?.name
           ?: return@forEach
         val all = tasks.findByProjectIdOrderBySeq(p.id).filter { it.repo == repoName }
@@ -305,6 +345,7 @@ class TaskService(
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
     req.enabled?.let { project.autoDispatch = it }
     req.limit?.let { project.dispatchLimit = it.coerceIn(1, 5) }
+    req.boardAutoStart?.let { project.boardAutoStart = it }
     projects.save(project)
     // 켜는 즉시 한 번 실행 — 슬롯이 비어 있으면 바로 착수돼요.
     return if (project.autoDispatch) runDispatch(projectId) else dispatchStatus(projectId)
@@ -353,6 +394,7 @@ class TaskService(
       waiting = all.count { it.owner == "ai" && it.status == "대기" && phaseRank(it.phase) == phaseRank(phase ?: "") },
       started = started,
       message = message,
+      boardAutoStart = project.boardAutoStart,
     )
   }
 
@@ -371,10 +413,10 @@ class TaskService(
       ?: throw ResponseStatusException(HttpStatus.BAD_REQUEST, "태스크의 담당 저장소(${t.repo})가 프로젝트에 없어요.")
     val (owner, name) = RepoCoords.of(project.org, repo)
     if (t.issueNumber == null) createAndLinkIssue(project, t, owner, name)
-    gitHub.claudeComment(owner, name, t.issueNumber!!, kickoffPrompt(project, t))
+    val how = dispatcher.instruct(owner, name, t.issueNumber!!, kickoffPrompt(project, t), t.code, t.id)
     t.status = "진행 중"
     t.updatedAt = Instant.now().toString()
-    record(t.id, "착수", via + "@claude 멘션으로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
+    record(t.id, "착수", via + "$how 로 에이전트 착수 지시 — 구현 PR 은 [${t.code}] 제목으로 자동 연결돼요")
     tasks.save(t)
   }
 
@@ -431,7 +473,15 @@ class TaskService(
         .map { TaskPullDto(it.number, it.title ?: "", it.state, it.merged, it.htmlUrl) }
     } ?: emptyList()
     val acts = activities.findByTaskIdOrderBySeqDesc(t.id).map { TaskActivityDto(it.at, it.kind, it.note) }
-    return TaskInsightDto(acts, issueState, prs)
+    // 코멘트 미러 — 연결 이슈 + [T-00x] 매칭 PR 들의 코멘트(에이전트 리뷰·결과 회신 포함).
+    val cms = full?.let { f ->
+      (listOfNotNull(t.issueNumber) + prs.map { it.number }).distinct()
+        .flatMap { n -> comments.findByRepoAndIssueNumberOrderByCreatedAtDesc(f, n) }
+        .sortedByDescending { it.createdAt ?: "" }
+        .take(30)
+        .map { TaskCommentDto(it.issueNumber, it.kind, it.user, it.body, it.htmlUrl, it.createdAt) }
+    } ?: emptyList()
+    return TaskInsightDto(acts, issueState, prs, cms)
   }
 
   // 미러와 동기화: 이슈 미연결이면 제목 접두([T-00x])로 자동 연결.
@@ -494,8 +544,8 @@ class TaskService(
             val (owner, name) = RepoCoords.of(project.org, repo)
             runCatching { gitHub.reopenIssue(owner, name, n) }
               .onSuccess { record(t.id, "재개", "이슈 #$n 다시 열음") }
-            runCatching { gitHub.claudeComment(owner, name, n, fb) }
-              .onSuccess { record(t.id, "이슈 코멘트", "@claude 멘션으로 피드백 전달 — 에이전트 재개 트리거") }
+            runCatching { dispatcher.instruct(owner, name, n, fb, t.code, t.id) }
+              .onSuccess { how -> record(t.id, "이슈 코멘트", "$how 로 피드백 전달 — 에이전트 재개 트리거") }
           }
         }
       }

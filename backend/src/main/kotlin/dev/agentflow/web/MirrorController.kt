@@ -135,6 +135,11 @@ class MirrorController(
   fun boardKickoff(@RequestBody req: BoardKickoffRequest): BoardKickoffResponse =
     taskService.boardKickoff(req.repo, req.number)
 
+  // 이슈 → 작업 승격(가져오기) — 어드민 밖에서 만든 이슈를 정식 [T-00x] 작업으로 편입해요.
+  @PostMapping("/board/adopt")
+  fun boardAdopt(@RequestBody req: BoardKickoffRequest): BoardKickoffResponse =
+    taskService.adoptIssue(req.repo, req.number)
+
   // ---- 외부 워크플로 실행 (workflow_dispatch) ----
   @GetMapping("/projects/{id}/workflows")
   fun listWorkflows(@PathVariable id: String): List<RepoWorkflowsDto> = workflows.list(id)

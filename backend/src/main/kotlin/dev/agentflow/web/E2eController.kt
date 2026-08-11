@@ -17,6 +17,13 @@ class E2eController(private val e2e: E2eReportService) {
   @GetMapping("/runs")
   fun list(): List<E2eRunDto> = e2e.list()
 
+  // 대시보드에서 E2E 실행 — 서버의 E2E_COMMAND 명령을 스폰해요(러너가 결과를 업로드).
+  @PostMapping("/execute")
+  fun execute(): dev.agentflow.dto.E2eExecStatusDto = e2e.execute()
+
+  @GetMapping("/execute/status")
+  fun executeStatus(): dev.agentflow.dto.E2eExecStatusDto = e2e.execStatus()
+
   @PostMapping("/runs")
   fun create(@RequestBody req: E2eRunCreateRequest): E2eRunDto = e2e.create(req)
 

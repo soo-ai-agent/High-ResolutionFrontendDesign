@@ -157,6 +157,17 @@ export async function pingHook(owner: string, repo: string, id: number): Promise
   await call("/hooks/ping", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ owner, repo, id }) })
 }
 
+// ---- 조직 웹훅 — 보드 이동(projects_v2_item)은 조직 레벨 이벤트라 조직 훅으로만 수신돼요 ----
+export async function listOrgHooks(org: string): Promise<GHHook[]> {
+  const res = await call(`/org-hooks?org=${encodeURIComponent(org)}`)
+  return (await res.json()) as GHHook[]
+}
+
+export async function createOrgHook(org: string, input: { url: string; secret?: string }): Promise<GHHook> {
+  const res = await call("/org-hooks", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ org, ...input }) })
+  return (await res.json()) as GHHook
+}
+
 // ---- React 훅 ----
 export function useGitHub() {
   const connected = useSyncExternalStore(subscribe, isConnected, () => false)

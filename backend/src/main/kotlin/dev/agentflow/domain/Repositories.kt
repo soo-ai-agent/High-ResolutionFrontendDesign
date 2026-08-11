@@ -19,6 +19,10 @@ interface RunRepository : JpaRepository<RunEntity, String> {
 
 interface BoardItemRepository : JpaRepository<BoardItemEntity, String>
 
+interface CommentRepository : JpaRepository<CommentEntity, String> {
+  fun findByRepoAndIssueNumberOrderByCreatedAtDesc(repo: String, issueNumber: Long): List<CommentEntity>
+}
+
 interface RepoRepository : JpaRepository<RepoEntity, String>
 
 interface EventRepository : JpaRepository<EventEntity, Long> {
@@ -29,6 +33,8 @@ interface EventRepository : JpaRepository<EventEntity, Long> {
 interface ProjectRepository : JpaRepository<ProjectEntity, String>
 
 interface MetaRepository : JpaRepository<MetaEntity, String>
+
+interface SettingRepository : JpaRepository<SettingEntity, String>
 
 interface ProjectDocRepository : JpaRepository<ProjectDocEntity, String> {
   fun findByProjectIdAndDocType(projectId: String, docType: String): ProjectDocEntity?

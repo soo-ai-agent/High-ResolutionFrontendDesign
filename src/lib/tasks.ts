@@ -68,12 +68,13 @@ export type DispatchStatus = {
   waiting: number
   started: Task[]
   message: string | null
+  boardAutoStart: boolean
 }
 
 export const getDispatch = (projectId: string) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`)
 
-export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?: number }) =>
+export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?: number; boardAutoStart?: boolean }) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -146,7 +147,8 @@ export const dispatchProjectWorkflow = (projectId: string, repo: string, workflo
 // ---- 진행·결과 (활동 이력 + 연결 이슈·PR) ----
 export type TaskActivity = { at: string; kind: string; note: string }
 export type TaskPull = { number: number; title: string; state: string | null; merged: boolean; url: string | null }
-export type TaskInsight = { activity: TaskActivity[]; issueState: string | null; pulls: TaskPull[] }
+export type TaskComment = { number: number; kind: "issue" | "review"; user: string | null; body: string; url: string | null; at: string | null }
+export type TaskInsight = { activity: TaskActivity[]; issueState: string | null; pulls: TaskPull[]; comments: TaskComment[] }
 
 export const getTaskInsight = (projectId: string, taskId: string) =>
   j<TaskInsight>(`/api/mirror/projects/${projectId}/tasks/${taskId}/insight`)

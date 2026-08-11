@@ -23,6 +23,7 @@ data class ProjectDto(
   val synced: Boolean = false,
   val autoDispatch: Boolean = false,
   val dispatchLimit: Int = 2,
+  val boardAutoStart: Boolean = true,
 )
 
 // ---- 자동 디스패치 (우선순위·단계 순서 기반 자동 착수) ----
@@ -34,8 +35,9 @@ data class DispatchStatusDto(
   val waiting: Int, // 대상 단계의 대기 중 ai 작업 수
   val started: List<TaskDto> = emptyList(), // 이번 실행에서 착수된 작업
   val message: String? = null,
+  val boardAutoStart: Boolean = true, // 보드 트리거(B안) 스위치
 )
-data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?)
+data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?, val boardAutoStart: Boolean? = null)
 
 // ---- 외부 워크플로 실행 (workflow_dispatch) ----
 data class WorkflowDto(val id: Long, val name: String, val path: String, val state: String)
@@ -50,6 +52,20 @@ data class BoardKickoffResponse(
   val task: TaskDto? = null,
   val message: String,
 )
+
+// ---- 에이전트 실행 모드 + 로컬 브리지 (Actions 없이 서버 머신에서 claude CLI 실행) ----
+data class BridgeJobDto(
+  val at: String,
+  val repo: String, // owner/name
+  val number: Long,
+  val taskCode: String?,
+  val status: String, // 대기 / 실행 중 / 완료 / 실패
+  val note: String,
+  val branch: String?,
+  val prUrl: String?,
+)
+data class BridgeStatusDto(val mode: String, val queued: Int, val running: Boolean, val jobs: List<BridgeJobDto>)
+data class BridgeConfigRequest(val mode: String? = null) // github | local
 
 // ---- CI 실패 자동 회복 ----
 data class CiRecoveryItemDto(
@@ -77,6 +93,8 @@ data class E2eRunDto(
   val shots: List<String>,
 )
 data class E2eRunCreateRequest(val name: String = "", val cases: List<E2eCaseDto> = emptyList())
+// 대시보드 E2E 실행 상태 — configured=false 면 서버에 E2E_COMMAND 미설정(버튼이 안내를 보여줘요)
+data class E2eExecStatusDto(val running: Boolean, val configured: Boolean, val startedAt: String?, val exit: Int?, val output: String)
 data class E2eShotRequest(val file: String = "", val dataBase64: String = "")
 
 // 테스트케이스 레지스트리 — 화면별 케이스 정의(사람이 등록·관리)
@@ -179,10 +197,12 @@ data class TaskPatchRequest(
 // ---- 태스크 진행·결과 (활동 로그 + 연결 이슈·PR) ----
 data class TaskActivityDto(val at: String, val kind: String, val note: String)
 data class TaskPullDto(val number: Long, val title: String, val state: String?, val merged: Boolean, val url: String?)
+data class TaskCommentDto(val number: Long, val kind: String, val user: String?, val body: String, val url: String?, val at: String?)
 data class TaskInsightDto(
   val activity: List<TaskActivityDto>,
   val issueState: String?, // 연결 이슈의 미러 상태 (open/closed, 미러에 없으면 null)
   val pulls: List<TaskPullDto>,
+  val comments: List<TaskCommentDto> = emptyList(), // 연결 이슈·PR 의 코멘트 미러 (에이전트 리뷰·결과 포함)
 )
 
 // ---- GitHub 프록시 요청 ----
@@ -190,6 +210,7 @@ data class ConnectRequest(val token: String?)
 data class IssueCreateRequest(val owner: String?, val repo: String?, val title: String?, val body: String?, val labels: List<String>?)
 data class ClaudeRequest(val owner: String?, val repo: String?, val number: Long?, val prompt: String?)
 data class HookCreateRequest(val owner: String?, val repo: String?, val url: String?, val secret: String?, val events: List<String>?)
+data class OrgHookCreateRequest(val org: String?, val url: String?, val secret: String?)
 data class HookPingRequest(val owner: String?, val repo: String?, val id: Long?)
 data class BackfillRequest(val owner: String?, val repo: String?, val include: List<String>?)
 

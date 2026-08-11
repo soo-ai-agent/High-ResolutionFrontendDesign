@@ -19,7 +19,7 @@ class ReviewLoopService(
   private val projects: ProjectRepository,
   private val tasks: TaskRepository,
   private val activities: TaskActivityRepository,
-  private val gitHub: GitHubService,
+  private val dispatcher: AgentDispatchService,
 ) {
   @EventListener
   fun onPull(e: PullActivity) {
@@ -43,7 +43,7 @@ class ReviewLoopService(
           return
         }
         val (owner, name) = RepoCoords.of(p.org, repoEntry)
-        gitHub.claudeComment(owner, name, e.number, reviewPrompt(t, rounds + 1))
+        dispatcher.instruct(owner, name, e.number, reviewPrompt(t, rounds + 1), t.code, t.id)
         record(t.id, "리뷰 지시", "PR #${e.number} 자동 리뷰 요청 (라운드 ${rounds + 1}/$ROUND_LIMIT)")
         return
       }

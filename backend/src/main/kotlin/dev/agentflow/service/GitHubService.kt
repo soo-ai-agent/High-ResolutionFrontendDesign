@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode
 import dev.agentflow.config.AppProps
 import dev.agentflow.config.GitHubTokenStore
 import dev.agentflow.dto.*
+import dev.agentflow.util.Json
+import org.springframework.boot.context.event.ApplicationReadyEvent
+import org.springframework.context.event.EventListener
 import org.springframework.http.HttpHeaders
 import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
@@ -17,7 +20,28 @@ class GitHubService(
   private val props: AppProps,
   private val tokenStore: GitHubTokenStore,
   private val mirror: MirrorService,
+  private val settings: SettingService,
 ) {
+  // 부팅 시 저장된 연결 복원 — PAT 는 데이터 폴더 DB에 영속화돼 재시작에도 유지돼요.
+  @EventListener(ApplicationReadyEvent::class)
+  fun restoreConnection() {
+    if (tokenStore.token != null) return
+    val saved = settings.get(SettingService.GITHUB_TOKEN) ?: return
+    tokenStore.token = saved
+    tokenStore.user = settings.get(SettingService.GITHUB_USER)?.let {
+      runCatching { Json.mapper.readValue(it, GHUser::class.java) }.getOrNull()
+    }
+  }
+
+  private fun persistConnection() {
+    tokenStore.token?.let { settings.put(SettingService.GITHUB_TOKEN, it) }
+    tokenStore.user?.let { settings.put(SettingService.GITHUB_USER, Json.mapper.writeValueAsString(it)) }
+  }
+
+  private fun clearPersistedConnection() {
+    settings.remove(SettingService.GITHUB_TOKEN)
+    settings.remove(SettingService.GITHUB_USER)
+  }
   private val client: RestClient by lazy { RestClient.builder().baseUrl(props.githubApiBase).build() }
 
   private fun messageFor(status: Int) = when (status) {
@@ -42,7 +66,7 @@ class GitHubService(
     block()
   } catch (e: RestClientResponseException) {
     val code = e.statusCode.value()
-    if (code == 401) tokenStore.clear()
+    if (code == 401) { tokenStore.clear(); clearPersistedConnection() }
     throw ResponseStatusException(e.statusCode, messageFor(code))
   }
 
@@ -61,10 +85,11 @@ class GitHubService(
       j.path("name").let { if (it.isNull || it.isMissingNode) null else it.asText() },
       j.path("avatar_url").let { if (it.isNull || it.isMissingNode) null else it.asText() },
     )
+    persistConnection()
     return StatusResponse(true, tokenStore.user)
   }
 
-  fun disconnect(): StatusResponse { tokenStore.clear(); return StatusResponse(false, null) }
+  fun disconnect(): StatusResponse { tokenStore.clear(); clearPersistedConnection(); return StatusResponse(false, null) }
 
   // ---- 쓰기 ----
   fun createIssue(owner: String, repo: String, req: IssueCreateRequest): CreatedIssue {
@@ -176,6 +201,27 @@ class GitHubService(
     return mapHook(j)
   }
 
+  // ---- 조직 웹훅 — 보드 이동(projects_v2_item)은 조직 레벨 이벤트로만 와요.
+  // PAT 에 admin:org_hook 스코프가 필요해요(없으면 404/403 로 응답돼요).
+  fun listOrgHooks(org: String): List<GHHook> {
+    val t = tokenOr401()
+    val j = translate {
+      client.get().uri("/orgs/{o}/hooks?per_page=100", org).headers(auth(t)).retrieve().body(JsonNode::class.java)
+    }
+    return if (j != null && j.isArray) j.map { mapHook(it) } else emptyList()
+  }
+
+  fun createOrgHook(org: String, url: String, secret: String?): GHHook {
+    val t = tokenOr401()
+    val config = mutableMapOf<String, Any>("url" to url, "content_type" to "json", "insecure_ssl" to "0")
+    if (!secret.isNullOrBlank()) config["secret"] = secret
+    val body = mapOf("name" to "web", "active" to true, "events" to listOf("projects_v2_item"), "config" to config)
+    val j = translate {
+      client.post().uri("/orgs/{o}/hooks", org).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(body).retrieve().body(JsonNode::class.java)
+    }!!
+    return mapHook(j)
+  }
+
   fun pingHook(owner: String, repo: String, id: Long) {
     val t = tokenOr401()
     translate {
@@ -229,6 +275,35 @@ class GitHubService(
     j?.path("tree")?.mapNotNull { it.path("path").asText(null) } ?: emptyList()
   }.getOrElse { emptyList() }
 
+  // ---- PR — 로컬 브리지가 결과 브랜치의 PR 을 보장할 때 써요 ----
+  fun openPullNumberByHead(owner: String, repo: String, branch: String): Long? = runCatching {
+    val j = client.get().uri("/repos/{o}/{r}/pulls?state=open&head={h}", owner, repo, "$owner:$branch")
+      .headers(readHeaders()).retrieve().body(JsonNode::class.java)
+    j?.firstOrNull()?.path("number")?.asLong()?.takeIf { it > 0 }
+  }.getOrNull()
+
+  fun createPull(owner: String, repo: String, title: String, head: String, base: String, body: String): CreatedIssue {
+    val t = tokenStore.token ?: envToken
+      ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "GitHub에 연결되어 있지 않아요.")
+    val j = translate {
+      client.post().uri("/repos/{o}/{r}/pulls", owner, repo).headers(auth(t)).contentType(MediaType.APPLICATION_JSON)
+        .body(mapOf("title" to title, "head" to head, "base" to base, "body" to body)).retrieve().body(JsonNode::class.java)
+    }!!
+    return CreatedIssue(j.path("number").asLong(), j.path("html_url").asText(), j.path("title").asText())
+  }
+
+  fun defaultBranch(owner: String, repo: String): String =
+    repoMeta(owner, repo)?.path("default_branch")?.asText("")?.takeIf { it.isNotBlank() } ?: "main"
+
+  // 로컬 브리지의 git 클론 인증 — UI PAT → 서버 환경 GITHUB_TOKEN 순.
+  fun cloneToken(): String? = tokenStore.token ?: envToken
+
+  // 이슈 본문 — 미러에는 제목만 있어서, 승격(가져오기) 시 상세로 쓸 본문을 읽어요. 실패는 null.
+  fun issueBody(owner: String, repo: String, number: Long): String? = runCatching {
+    client.get().uri("/repos/{o}/{r}/issues/{n}", owner, repo, number).headers(readHeaders()).retrieve().body(JsonNode::class.java)
+      ?.path("body")?.let { if (it.isNull || it.isMissingNode) null else it.asText() }
+  }.getOrNull()
+
   fun fileText(owner: String, repo: String, path: String): String? = runCatching {
     client.get().uri("/repos/{o}/{r}/contents/{p}", owner, repo, path).headers(readHeaders("application/vnd.github.raw+json")).retrieve().body(String::class.java)
   }.getOrNull()
@@ -245,6 +320,8 @@ class GitHubService(
   )
 
   companion object {
-    val DEFAULT_HOOK_EVENTS = listOf("issues", "pull_request", "workflow_run", "push")
+    // issue_comment·pull_request_review_comment: 코멘트 미러(인사이트 패널) 근거 데이터.
+    // 기존에 등록한 웹훅에는 없어요 — 미러 화면에서 웹훅을 다시 등록하면 추가돼요.
+    val DEFAULT_HOOK_EVENTS = listOf("issues", "pull_request", "workflow_run", "push", "issue_comment", "pull_request_review_comment")
   }
 }

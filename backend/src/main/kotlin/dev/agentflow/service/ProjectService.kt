@@ -55,7 +55,7 @@ class ProjectService(
     val derivedUpdated = ts.mapNotNull { runCatching { Instant.parse(it.updatedAt) }.getOrNull() }
       .maxOrNull()?.let(::relative) ?: updated
 
-    return ProjectDto(id, name, org, desc, derivedStage, derivedProgress, repos, total - done, openPrs, failRuns, derivedUpdated, synced || mirrored, autoDispatch, dispatchLimit)
+    return ProjectDto(id, name, org, desc, derivedStage, derivedProgress, repos, total - done, openPrs, failRuns, derivedUpdated, synced || mirrored, autoDispatch, dispatchLimit, boardAutoStart)
   }
 
   private fun relative(at: Instant): String {

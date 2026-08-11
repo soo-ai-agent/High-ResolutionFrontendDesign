@@ -9,6 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "backend": "cd backend && PORT=8080 ./gradlew bootRun",
+    "e2e": "node e2e/run.mjs",
     "format": "oxfmt"
   },
   "dependencies": {
@@ -23,6 +24,7 @@
     "tailwindcss": "^4.0.0",
     "@tailwindcss/vite": "^4.0.0",
     "oxfmt": "^0.2.0",
+    "playwright-core": "^1.49.0",
     "typescript": "^5.7.0",
     "vite": "^8.0.0"
   }

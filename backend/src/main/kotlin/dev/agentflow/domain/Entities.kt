@@ -65,6 +65,20 @@ class RunEntity(
   @ColumnDefault("false") var recoveryNotified: Boolean = false,
 )
 
+// 이슈·PR 코멘트 미러 — 에이전트의 리뷰·결과 코멘트를 어드민 인사이트에서 보기 위해 저장해요.
+// 본문은 2000자로 잘라 저장(전체는 GitHub 링크로). GitHub 은 PR 코멘트도 이슈 번호로 통합해요.
+@Entity
+class CommentEntity(
+  @Id var id: String = "", // "repo#commentId"
+  var repo: String = "",
+  @Column(name = "issue_num") var issueNumber: Long = 0,
+  @Column(name = "author") var user: String? = null,
+  @Column(length = 2000) var body: String = "",
+  @Column(length = 512) var htmlUrl: String? = null,
+  var kind: String = "issue", // issue(이슈·PR 대화) | review(PR 리뷰 라인 코멘트)
+  var createdAt: String? = null,
+)
+
 @Entity
 class BoardItemEntity(
   @Id var contentNodeId: String = "",
@@ -114,6 +128,9 @@ class ProjectEntity(
   // 동시 실행(dispatchLimit)만큼 자동 착수해요. 기본값은 기존 행 마이그레이션(ddl update)에도 쓰여요.
   @ColumnDefault("false") var autoDispatch: Boolean = false,
   @ColumnDefault("2") var dispatchLimit: Int = 2,
+  // 보드 트리거(B안) — GitHub Projects 카드가 In Progress 로 이동하면 매칭 작업 자동 착수.
+  // 끄면 보드 이동은 미러에만 반영되고 착수는 일어나지 않아요.
+  @ColumnDefault("true") var boardAutoStart: Boolean = true,
 )
 
 // 단일 행 메타 — 미러 마지막 갱신 시각(summary.updatedAt).
@@ -121,6 +138,15 @@ class ProjectEntity(
 class MetaEntity(
   @Id var id: String = "meta",
   var updatedAt: String? = null,
+)
+
+// 키-값 서버 설정 — 연결 PAT(재시작 유지), 에이전트 실행 모드 등을 영속화해요.
+// 값은 평문으로 데이터 폴더 DB에 저장돼요 — 데이터 폴더 접근 권한이 곧 토큰 접근 권한.
+@Entity
+class SettingEntity(
+  @Id var id: String = "",
+  @Column(name = "val_text", length = 4000) var value: String = "",
+  var updatedAt: String = "",
 )
 
 // 프로젝트별 문서(PRD·IA 등) — 프로젝트 생성 시 에이전트(키 없으면 템플릿)가 초안을 만들고,

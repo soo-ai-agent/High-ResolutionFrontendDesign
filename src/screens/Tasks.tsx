@@ -118,6 +118,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     if (st.started.length > 0) await load(project.id)
   }
   const toggleDispatch = () => run(async () => applyDispatch(await setDispatch(project.id, { enabled: !(dispatch?.enabled ?? false) })))
+  const toggleBoardAutoStart = () => run(async () => applyDispatch(await setDispatch(project.id, { boardAutoStart: !(dispatch?.boardAutoStart ?? true) })))
   const changeLimit = (n: number) => run(async () => applyDispatch(await setDispatch(project.id, { limit: n })))
   const dispatchNow = () => run(async () => applyDispatch(await runDispatchNow(project.id)))
 
@@ -183,6 +184,10 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                   {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
                 </select>
               </label>
+              <div className="flex items-center gap-2" title="GitHub Projects 보드에서 카드를 In Progress 로 옮기면 매칭 작업을 자동 착수해요(B안). 끄면 보드 이동은 표시만 돼요.">
+                <span className="text-[12px] font-semibold text-text-secondary">보드 이동 자동 착수</span>
+                <Toggle on={dispatch?.boardAutoStart ?? true} onChange={toggleBoardAutoStart} />
+              </div>
               {dispatch && (
                 <span className="text-[12px] text-text-secondary">
                   현재 단계 <b className="text-text-primary">{dispatch.activePhase ?? "—"}</b>
@@ -327,6 +332,26 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                           </div>
                         ))}
                       </div>
+
+                      {/* 코멘트 미러 — 연결 이슈·PR 의 대화(에이전트 리뷰·결과 회신 포함) */}
+                      {insight.comments.length > 0 && (
+                        <div className="mt-3 border-t border-line pt-3">
+                          <div className="mb-2 text-[12px] font-bold uppercase tracking-wide text-text-disabled">코멘트 (이슈·PR)</div>
+                          <div className="max-h-[280px] space-y-2 overflow-y-auto pr-1">
+                            {insight.comments.map((c, i) => (
+                              <div key={i} className="rounded-[10px] bg-surface-2 p-2.5">
+                                <div className="flex items-center gap-1.5 text-[11px]">
+                                  <span className="font-bold text-text-secondary">{c.user ?? "?"}</span>
+                                  <Badge tone={c.kind === "review" ? "purple" : "neutral"}>{c.kind === "review" ? "리뷰" : `#${c.number}`}</Badge>
+                                  {c.at && <span className="ml-auto font-mono text-text-tertiary">{c.at.slice(5, 16).replace("T", " ")}</span>}
+                                  {c.url && <a href={c.url} target="_blank" rel="noreferrer" className="font-semibold text-blue hover:underline">열기</a>}
+                                </div>
+                                <div className="mt-1 whitespace-pre-wrap break-words text-[12px] leading-relaxed text-text-primary">{c.body.length > 400 ? c.body.slice(0, 400) + "…" : c.body}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 

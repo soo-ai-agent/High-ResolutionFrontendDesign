@@ -60,6 +60,21 @@ class GitHubController(private val gh: GitHubService) {
     return mapOf("ok" to true, "pinged" to id)
   }
 
+  // 조직 웹훅 — 보드 이동(projects_v2_item)은 조직 레벨로만 와요. admin:org_hook 스코프 필요.
+  @GetMapping("/org-hooks")
+  fun listOrgHooks(@RequestParam org: String?): List<GHHook> {
+    if (org.isNullOrBlank()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "org 가 필요해요.")
+    return gh.listOrgHooks(org)
+  }
+
+  @PostMapping("/org-hooks")
+  fun createOrgHook(@RequestBody req: OrgHookCreateRequest): ResponseEntity<GHHook> {
+    val org = req.org?.trim(); val url = req.url?.trim()
+    if (org.isNullOrBlank() || url.isNullOrBlank())
+      throw ResponseStatusException(HttpStatus.BAD_REQUEST, "org·url 이 필요해요.")
+    return ResponseEntity.status(HttpStatus.CREATED).body(gh.createOrgHook(org, url, req.secret))
+  }
+
   @PostMapping("/backfill")
   fun backfill(@RequestBody req: BackfillRequest): BackfillResult {
     val owner = req.owner; val repo = req.repo

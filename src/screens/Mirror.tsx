@@ -2,7 +2,7 @@ import { useEffect, useState } from "react"
 import { Icon, Button, Badge, Card, SectionTitle, Tabs, EmptyState, Modal } from "../components/ui"
 import * as mirror from "../lib/mirror"
 import type { MirrorIssue, MirrorPull, MirrorRun, MirrorEvent, MirrorSummary } from "../lib/mirror"
-import { useGitHub, createIssue, mentionClaude, listHooks, createHook, pingHook, backfill } from "../lib/github"
+import { useGitHub, createIssue, mentionClaude, listHooks, createHook, pingHook, backfill, listOrgHooks, createOrgHook } from "../lib/github"
 import type { GHHook } from "../lib/github"
 
 const STAGE_OPTS = ["초안", "계획", "빌드 중", "검토", "완료"]
@@ -296,6 +296,35 @@ function WebhookSetup({ connected, navigate, defaultRepo }: { connected: boolean
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState("")
   const [error, setError] = useState("")
+  const [orgName, setOrgName] = useState(defaultRepo.split("/")[0] ?? "")
+  const [orgHooks, setOrgHooks] = useState<GHHook[]>([])
+
+  const loadOrg = async () => {
+    if (!orgName.trim()) return setError("조직 이름을 입력해 주세요.")
+    setBusy(true); setError(""); setMsg("")
+    try {
+      const hs = await listOrgHooks(orgName.trim())
+      setOrgHooks(hs)
+      setMsg(hs.length ? `조직 웹훅 ${hs.length}개를 찾았어요.` : "조직 웹훅이 없어요 — 등록하면 보드 이동이 미러로 들어와요.")
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const createOrg = async () => {
+    if (!orgName.trim() || !url.trim()) return setError("조직 이름과 전달 URL이 필요해요.")
+    setBusy(true); setError(""); setMsg("")
+    try {
+      const h = await createOrgHook(orgName.trim(), { url: url.trim(), secret: secret.trim() || undefined })
+      setOrgHooks((xs) => [h, ...xs.filter((x) => x.id !== h.id)])
+      setMsg(`조직 웹훅 #${h.id}을(를) 등록했어요 — GitHub Projects 카드 이동이 미러에 반영돼요.`)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const parsed = () => splitRepo(repo.trim())
   const load = async () => {
@@ -396,7 +425,29 @@ function WebhookSetup({ connected, navigate, defaultRepo }: { connected: boolean
             </div>
           )}
 
-          <p className="text-[11px] text-text-tertiary">등록되는 이벤트: <code className="font-mono">issues · pull_request · workflow_run · push</code>. 실제 보드 이동(<code className="font-mono">projects_v2_item</code>)은 조직 레벨 이벤트라 조직 설정의 웹훅에서 따로 켜야 해요.</p>
+          <p className="text-[11px] text-text-tertiary">등록되는 이벤트: <code className="font-mono">issues · pull_request · workflow_run · push · issue_comment · pull_request_review_comment</code>. 코멘트 이벤트는 인사이트 패널의 코멘트 미러에 써요 — 예전에 등록한 웹훅에는 없으니 다시 등록하면 추가돼요.</p>
+
+          {/* 조직 웹훅 — 보드 이동(projects_v2_item)은 조직 레벨 이벤트라 따로 등록해요 */}
+          <div className="space-y-3 rounded-[10px] border border-line p-3">
+            <div className="text-[12px] font-bold text-text-primary">조직 웹훅 <span className="ml-1 font-semibold text-text-tertiary">보드 이동(projects_v2_item) 수신 — PAT 에 admin:org_hook 스코프 필요</span></div>
+            <div className="flex flex-wrap gap-2">
+              <input value={orgName} onChange={(e) => setOrgName(e.target.value)} placeholder="조직 이름 (orgs/<이름>)" className="h-9 min-w-[200px] flex-1 rounded-[10px] border border-line bg-surface px-3 font-mono text-[13px] outline-none focus:border-blue" />
+              <Button size="sm" variant="primary" onClick={createOrg} loading={busy} disabled={!connected}>조직 웹훅 등록</Button>
+              <Button size="sm" onClick={loadOrg} loading={busy} disabled={!connected}>조회</Button>
+            </div>
+            {orgHooks.length > 0 && (
+              <div className="divide-y divide-line rounded-[10px] border border-line">
+                {orgHooks.map((h) => (
+                  <div key={h.id} className="flex items-center gap-2 px-3 py-2 text-[12px]">
+                    <Badge tone={h.active ? "success" : "neutral"}>{h.active ? "active" : "off"}</Badge>
+                    <span className="min-w-0 flex-1 truncate font-mono text-text-secondary" title={h.url}>{h.url}</span>
+                    <span className="text-text-tertiary">{h.events.join(", ")}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-[11px] text-text-tertiary">전달 URL·시크릿은 위 폼의 값을 그대로 써요. 등록 이벤트: <code className="font-mono">projects_v2_item</code> — GitHub Projects 카드 이동이 미러·자동 착수(B안)로 이어지는 근거예요.</p>
+          </div>
         </div>
       )}
     </Card>

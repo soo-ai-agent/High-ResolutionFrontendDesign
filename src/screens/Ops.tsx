@@ -5,6 +5,7 @@ import { listTasks, patchTask, syncTaskIssue, getTaskInsight, reviewTask, type T
 
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
+import { getBridgeStatus, setBridgeMode, type BridgeStatus } from "../lib/bridge"
 
 const TOKEN_RE = /^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)/
 // 프록시 쓰기(repo)·웹훅 등록(admin:repo_hook)·Actions 조회(workflow) 권한을 미리 담아요.
@@ -96,7 +97,7 @@ function GitHubConnect({ navigate }: { navigate: (r: string) => void }) {
         <div className="font-bold text-text-primary">권한 안내</div>
         <div>· 저장소 읽기·이슈/코멘트 쓰기: <code className="rounded bg-surface px-1 font-mono">repo</code> (공개 저장소만이면 <code className="rounded bg-surface px-1 font-mono">public_repo</code>).</div>
         <div>· 웹훅 등록까지 하려면 <code className="rounded bg-surface px-1 font-mono">admin:repo_hook</code>, Actions 조회는 <code className="rounded bg-surface px-1 font-mono">workflow</code>를 함께 선택하세요. (위 ‘토큰 만들기’에 미리 담겨 있어요.)</div>
-        <div>· 토큰은 서버로 전송돼 세션 동안 서버 메모리에만 보관되고, 브라우저·화면에는 저장·표시되지 않아요.</div>
+        <div>· 토큰은 서버로 전송돼 서버 데이터 폴더(DB)에 보관되고, 브라우저·화면에는 저장·표시되지 않아요. 재시작해도 연결이 유지돼요.</div>
         <div>· GitHub 요청은 모두 서버 프록시(<code className="rounded bg-surface px-1 font-mono">/api/github</code>)를 거쳐요.</div>
       </div>
 
@@ -149,7 +150,7 @@ function ConnectedView({ user, demo, navigate, onExit }: { user: { login: string
 
       <div className="mt-4 flex items-center gap-2 rounded-[10px] bg-success-light px-4 py-2.5">
         <Icon name="lock" className="h-4 w-4 text-success" />
-        <span className="text-[12px] font-semibold text-success">토큰은 서버 메모리에만 있어요. 세션이 끝나거나 ‘연결 해제’ 하면 사라져요.</span>
+        <span className="text-[12px] font-semibold text-success">토큰은 서버 데이터 폴더에 보관돼 재시작에도 유지돼요. ‘연결 해제’ 하면 삭제돼요.</span>
       </div>
     </Card>
   )
@@ -380,13 +381,66 @@ export function HumanTasks({ project }: { project: ProjectItem | null }) {
   )
 }
 
-// ============ SETTINGS (MVP: 연동만) ============
+// ============ SETTINGS (연동 + 에이전트 실행 모드) ============
 export function Settings({ navigate }: { navigate: (r: string) => void }) {
   return (
     <div className="space-y-5">
       <SectionTitle title="연동 설정" desc="GitHub 계정을 연결하면 미러·이슈·웹훅이 실제로 동작해요." />
       <GitHubConnect navigate={navigate} />
+      <AgentModeCard />
     </div>
+  )
+}
+
+// 에이전트 실행 모드 — 착수·피드백·리뷰·CI 회복 지시를 어디서 실행할지 골라요.
+function AgentModeCard() {
+  const [status, setStatus] = useState<BridgeStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState("")
+
+  const load = () => getBridgeStatus().then(setStatus).catch((e) => setErr((e as Error).message))
+  useEffect(() => {
+    load()
+    const t = window.setInterval(load, 10_000) // 브리지 잡 진행 반영
+    return () => window.clearInterval(t)
+  }, [])
+
+  const choose = async (mode: "github" | "local") => {
+    setBusy(true); setErr("")
+    try { setStatus(await setBridgeMode(mode)) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="text-[14px] font-bold text-text-primary">에이전트 실행 모드</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-text-secondary">
+          착수·피드백·자동 리뷰·CI 회복 지시가 어디서 실행될지 골라요. <b>GitHub Actions</b>는 @claude 코멘트로 클라우드 러너(claude.yml)가,
+          <b> 로컬 브리지</b>는 이 서버 머신의 <code className="font-mono">claude</code> CLI 가 직접 실행해요(Actions 불필요 · CLI 설치와 구독 로그인 필요).
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant={status?.mode !== "local" ? "primary" : "secondary"} size="sm" onClick={() => choose("github")} disabled={busy}>GitHub Actions (@claude 코멘트)</Button>
+        <Button variant={status?.mode === "local" ? "primary" : "secondary"} size="sm" onClick={() => choose("local")} disabled={busy}>로컬 브리지 (서버에서 CLI 실행)</Button>
+        {status?.mode === "local" && (
+          <span className="text-[12px] text-text-secondary">대기 <b className="text-text-primary">{status.queued}</b>{status.running && <> · <b className="text-blue">실행 중</b></>}</span>
+        )}
+      </div>
+      {err && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{err}</div>}
+      {status?.mode === "local" && status.jobs.length > 0 && (
+        <div className="divide-y divide-line rounded-[10px] border border-line">
+          {status.jobs.map((jb, i) => (
+            <div key={i} className="flex items-center gap-2 px-3 py-2 text-[12px]">
+              <Badge tone={jb.status === "완료" ? "success" : jb.status === "실패" ? "error" : jb.status === "실행 중" ? "blue" : "neutral"}>{jb.status}</Badge>
+              <span className="font-mono text-text-secondary">{jb.repo}#{jb.number}</span>
+              {jb.taskCode && <Badge tone="purple">{jb.taskCode}</Badge>}
+              <span className="min-w-0 flex-1 truncate text-text-tertiary" title={jb.note}>{jb.note}</span>
+              {jb.prUrl && <a href={jb.prUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue hover:underline">PR</a>}
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
   )
 }
 

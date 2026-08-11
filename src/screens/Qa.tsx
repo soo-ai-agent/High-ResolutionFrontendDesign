@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { Icon, Badge, Button, Card, SectionTitle, EmptyState } from "../components/ui"
-import { listE2eRuns, e2eShotUrl, listTestCases, createTestCase, deleteTestCase, TEST_SCREENS, type E2eRun, type TestCase } from "../lib/e2e"
+import { listE2eRuns, e2eShotUrl, listTestCases, createTestCase, deleteTestCase, executeE2e, e2eExecStatus, TEST_SCREENS, type E2eRun, type TestCase } from "../lib/e2e"
 
 // 테스트 리포트 — 화면별 테스트케이스 관리 + E2E 실행별 결과·캡처 확인.
 // 케이스의 최근 결과는 최신 실행의 같은 이름 케이스와 매칭해요(없으면 미실행).
@@ -31,6 +31,30 @@ export default function QaScreen() {
     return hit ? (hit.ok ? "통과" : "실패") : "미실행"
   }
 
+  // 대시보드에서 E2E 실행 — 서버가 E2E_COMMAND 를 스폰하고, 끝나면 목록을 새로고침해요.
+  const [execRunning, setExecRunning] = useState(false)
+  const [execMsg, setExecMsg] = useState("")
+  const runE2e = async () => {
+    setError(""); setExecMsg("")
+    try {
+      await executeE2e()
+      setExecRunning(true)
+      setExecMsg("실행 중… (러너가 끝나면 결과가 여기에 올라와요)")
+      const poll = window.setInterval(async () => {
+        try {
+          const s = await e2eExecStatus()
+          if (!s.running) {
+            window.clearInterval(poll)
+            setExecRunning(false)
+            setExecMsg(s.exit === 0 ? "실행 완료 — 최신 결과를 불러왔어요." : `실행 종료 (exit ${s.exit ?? "?"}) — 출력 끝부분: ${s.output.slice(-200)}`)
+            const rs = await listE2eRuns()
+            setRuns(rs); setSelId(rs[0]?.id ?? null)
+          }
+        } catch { /* 다음 폴에서 재시도 */ }
+      }, 3000)
+    } catch (e) { setError((e as Error).message) }
+  }
+
   const addCase = async (screen: string, name: string) => {
     setError("")
     try {
@@ -51,10 +75,12 @@ export default function QaScreen() {
           <div className="flex items-center gap-1.5">
             <Button variant={tab === "cases" ? "primary" : "secondary"} size="sm" onClick={() => setTab("cases")}>화면별 케이스</Button>
             <Button variant={tab === "runs" ? "primary" : "secondary"} size="sm" onClick={() => setTab("runs")}>실행 리포트</Button>
+            <Button variant="secondary" size="sm" onClick={runE2e} loading={execRunning} icon={<Icon name="play" className="h-4 w-4" />}>테스트 실행</Button>
           </div>
         } />
 
       {error && <div className="rounded-[12px] bg-error-light px-4 py-3 text-[13px] font-semibold text-error">{error}</div>}
+      {execMsg && <div className="rounded-[12px] bg-blue-light px-4 py-3 text-[13px] font-semibold text-blue">{execMsg}</div>}
 
       {tab === "cases" && !loading && (
         <ScreenCases cases={cases} resultOf={resultOf} latest={latest} onAdd={addCase} onRemove={removeCase} onViewShot={(f) => { setSelId(latest?.id ?? null); setViewShot(f) }} />
@@ -147,7 +173,7 @@ const RESULT_TONE: Record<string, "success" | "error" | "neutral"> = { "통과":
 
 // 캡처 파일명 → 화면 매칭 (E2E 캡처 파일명 규칙 기반). 순서 중요 — human 이 tasks 보다 먼저.
 const SHOT_KEYS: [string, string][] = [
-  ["login", "로그인"], ["wizard", "프로젝트"], ["projects", "프로젝트"],
+  ["wizard", "프로젝트"], ["projects", "프로젝트"],
   ["pipeline", "진행 흐름"], ["gantt", "진행 흐름"],
   ["prd", "PRD"], ["ia", "IA·화면설계"], ["rules", "코드 규칙"],
   ["human", "휴먼태스크"], ["tasks", "작업 계획"],

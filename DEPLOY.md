@@ -19,7 +19,8 @@
 | `SPRING_PROFILES_ACTIVE` | 운영 | (default=H2) | `prod` → Postgres. |
 | `DATABASE_URL` | prod | — | 두 형식 지원: `jdbc:postgresql://host:5432/db`(+ `DATABASE_USER`/`DATABASE_PASSWORD`) **또는** `postgres://user:pass@host:5432/db` DSN(Fly/Render/Heroku). `prod` 프로파일이면 JPA가 테이블을 자동 생성(ddl-auto=update). |
 
-> PAT는 환경 변수가 아니라 **런타임에 설정 › 연동**에서 연결해요(서버 메모리). 재시작 시 사라져요.
+> PAT는 환경 변수가 아니라 **런타임에 설정 › 연동**에서 연결해요. 연결하면 데이터 폴더 DB에
+> 평문 저장돼 **재시작에도 유지**돼요(데이터 폴더 접근 권한 = 토큰 접근 권한 — 볼륨 권한에 주의).
 
 ## 로컬 실행
 

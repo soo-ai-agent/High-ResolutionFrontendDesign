@@ -119,9 +119,7 @@ function Header({ navigate, project, onMenu }: { navigate: (r: string) => void; 
           </button>
         )}
 
-        <IconButton label="알림"><span className="relative"><Icon name="bell" /><span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-error ring-2 ring-white" /></span></IconButton>
-        <IconButton label="도움말"><Icon name="help" /></IconButton>
-        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" aria-label="계정">{user?.login ? user.login.slice(0, 2).toUpperCase() : "SB"}</button>
+        <button className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#3182f6] to-[#7c5cfc] text-[13px] font-bold text-white" aria-label="계정" title={user?.login ? `연결 계정 ${user.login}` : "GitHub 미연결"}>{user?.login ? user.login.slice(0, 2).toUpperCase() : "—"}</button>
       </div>
     </header>
   )

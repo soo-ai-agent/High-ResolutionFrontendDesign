@@ -26,7 +26,7 @@ class CiRecoveryService(
   private val activities: TaskActivityRepository,
   private val runs: RunRepository,
   private val pulls: PullRepository,
-  private val gitHub: GitHubService,
+  private val dispatcher: AgentDispatchService,
 ) {
   fun sweep(projectId: String): CiRecoveryResultDto {
     val project = projects.findById(projectId).orElse(null)
@@ -47,7 +47,7 @@ class CiRecoveryService(
         val (task, prNumber) = matchTask(full, run, active) ?: run { pending++; return@forEach }
         val target = prNumber ?: task.issueNumber ?: run { pending++; return@forEach }
         try {
-          gitHub.claudeComment(owner, name, target, recoveryPrompt(task, run))
+          dispatcher.instruct(owner, name, target, recoveryPrompt(task, run), task.code, task.id)
         } catch (e: ResponseStatusException) {
           failMsg = "지시 실패: ${e.reason ?: e.message}" // PAT 미연결 등 — 다음 스윕에 재시도.
           pending++
