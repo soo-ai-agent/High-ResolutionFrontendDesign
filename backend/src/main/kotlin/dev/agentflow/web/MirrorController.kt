@@ -130,6 +130,14 @@ class MirrorController(
   @PostMapping("/projects/{id}/ci-recovery/run")
   fun runCiRecovery(@PathVariable id: String): CiRecoveryResultDto = ciRecovery.sweep(id)
 
+  // 회복 루프 상태 — 마지막 스윕 시각·지시·보류·오류 (진행 흐름 화면 카드가 조회).
+  @GetMapping("/projects/{id}/ci-recovery/status")
+  fun ciRecoveryStatus(@PathVariable id: String): CiRecoveryStatusDto = ciRecovery.status(id)
+
+  // 검토 대기 큐 — 전 프로젝트에서 사람 승인을 기다리는 작업 (헤더 배지).
+  @GetMapping("/review-queue")
+  fun reviewQueue(): ReviewQueueDto = taskService.reviewQueue()
+
   // 보드 카드 착수(A안) — 카드 이슈가 작업 계획과 매칭되면 작업 착수, 아니면 이슈에 @claude 지시.
   @PostMapping("/board/kickoff")
   fun boardKickoff(@RequestBody req: BoardKickoffRequest): BoardKickoffResponse =

@@ -25,6 +25,7 @@ class LocalBridgeService(
   @Value("\${MIRROR_DATA_DIR:./.data}") private val dataDir: String,
 ) {
   class Job(
+    val id: Long,
     val at: String,
     val owner: String,
     val repo: String,
@@ -33,20 +34,24 @@ class LocalBridgeService(
     val taskCode: String?,
     val taskId: String?,
   ) {
-    @Volatile var status: String = "대기" // 대기 / 실행 중 / 완료 / 실패
+    @Volatile var status: String = "대기" // 대기 / 실행 중 / 완료 / 실패 / 취소
     @Volatile var note: String = ""
     @Volatile var branch: String? = null
     @Volatile var prUrl: String? = null
+    @Volatile var log: String = "" // 에이전트 출력 끝부분 — /jobs/{id}/log 로 열람
+    @Volatile var canceled: Boolean = false
+    @Volatile var proc: Process? = null // 실행 중 취소용 (CLI 프로세스)
   }
 
   private val executor = Executors.newSingleThreadExecutor { r -> Thread(r, "local-bridge").apply { isDaemon = true } }
   private val jobs = CopyOnWriteArrayList<Job>()
+  private val idSeq = java.util.concurrent.atomic.AtomicLong(0)
 
   fun enqueue(owner: String, repo: String, number: Long, prompt: String, taskCode: String?, taskId: String?): Int {
-    val job = Job(Instant.now().toString(), owner, repo, number, prompt, taskCode, taskId)
+    val job = Job(idSeq.incrementAndGet(), Instant.now().toString(), owner, repo, number, prompt, taskCode, taskId)
     jobs.add(0, job)
     while (jobs.size > 30) jobs.removeAt(jobs.size - 1)
-    record(taskId, "브리지 접수", "로컬 브리지 큐 등록 — $owner/$repo#$number")
+    record(taskId, "브리지 접수", "로컬 브리지 큐 등록 (#${job.id}) — $owner/$repo#$number")
     executor.submit { run(job) }
     return jobs.count { it.status == "대기" }
   }
@@ -55,10 +60,67 @@ class LocalBridgeService(
     mode = mode,
     queued = jobs.count { it.status == "대기" },
     running = jobs.any { it.status == "실행 중" },
-    jobs = jobs.take(10).map { BridgeJobDto(it.at, "${it.owner}/${it.repo}", it.number, it.taskCode, it.status, it.note, it.branch, it.prUrl) },
+    cliAvailable = cliAvailable(),
+    command = props.bridgeCommand.ifBlank { DEFAULT_COMMAND },
+    jobs = jobs.take(10).map { BridgeJobDto(it.id, it.at, "${it.owner}/${it.repo}", it.number, it.taskCode, it.status, it.note, it.branch, it.prUrl) },
   )
 
+  // ---- 잡 제어 — 대기 취소·실행 중 중단·재시도·로그 열람 ----
+  private fun jobOr404(id: Long): Job = jobs.firstOrNull { it.id == id }
+    ?: throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.NOT_FOUND, "브리지 잡 #$id 가 없어요 (최근 30건만 보관).")
+
+  fun cancel(id: Long): BridgeJobDto {
+    val job = jobOr404(id)
+    when (job.status) {
+      "대기" -> {
+        job.canceled = true
+        job.status = "취소"
+        job.note = "실행 전 취소"
+        record(job.taskId, "브리지 취소", "잡 #$id 대기 중 취소")
+      }
+      "실행 중" -> {
+        job.canceled = true
+        job.proc?.destroyForcibly() // run() 이 취소 플래그를 보고 '취소'로 마감해요.
+        record(job.taskId, "브리지 취소", "잡 #$id 실행 중단 요청")
+      }
+      else -> throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "이미 끝난 잡이에요 (${job.status}).")
+    }
+    return BridgeJobDto(job.id, job.at, "${job.owner}/${job.repo}", job.number, job.taskCode, job.status, job.note, job.branch, job.prUrl)
+  }
+
+  fun retry(id: Long): Int {
+    val job = jobOr404(id)
+    if (job.status !in setOf("완료", "실패", "취소"))
+      throw org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "진행 중인 잡은 재시도할 수 없어요 (${job.status}).")
+    return enqueue(job.owner, job.repo, job.number, job.prompt, job.taskCode, job.taskId)
+  }
+
+  fun jobLog(id: Long): String = jobOr404(id).log.ifBlank { "(아직 출력이 없어요)" }
+
+  // ---- 실행 가능성 점검 — claude CLI·git 설치 여부 (60초 캐시, 상태 폴링 부담 최소화) ----
+  @Volatile private var cliCheck: Pair<Long, Boolean>? = null
+  @Volatile private var gitCheck: Pair<Long, Boolean>? = null
+
+  fun cliAvailable(): Boolean = cached({ cliCheck }, { cliCheck = it }) {
+    // 설정 명령이 기본(claude CLI)이 아니면 그 명령의 첫 단어로 점검해요.
+    val cmd = props.bridgeCommand.ifBlank { DEFAULT_COMMAND }.trim().split(" ").first()
+    exec(ProcessBuilder("bash", "-lc", "command -v ${if (cmd == "claude") "claude" else cmd}"), File("."), 10).ok
+  }
+
+  fun gitAvailable(): Boolean = cached({ gitCheck }, { gitCheck = it }) {
+    exec(ProcessBuilder("bash", "-lc", "command -v git"), File("."), 10).ok
+  }
+
+  private fun cached(get: () -> Pair<Long, Boolean>?, set: (Pair<Long, Boolean>) -> Unit, check: () -> Boolean): Boolean {
+    val now = System.currentTimeMillis()
+    get()?.let { (at, v) -> if (now - at < 60_000) return v }
+    val v = runCatching(check).getOrDefault(false)
+    set(now to v)
+    return v
+  }
+
   private fun run(job: Job) {
+    if (job.canceled) { if (job.status != "취소") job.status = "취소"; return }
     job.status = "실행 중"
     try {
       val ws = File(dataDir, "bridge/${job.owner}__${job.repo}")
@@ -83,11 +145,20 @@ class LocalBridgeService(
       val from = if (hasRemote) "origin/$branch" else "origin/$base"
       if (!sh(ws, 60, "git", "checkout", "-B", branch, from).ok) return fail(job, "브랜치 준비 실패 ($from)")
 
-      // 3) 에이전트 실행 — 프롬프트는 파일로 전달(따옴표·개행 안전)
+      // 3) 에이전트 실행 — 프롬프트는 파일로 전달(따옴표·개행 안전). 프로세스 핸들을 잡아
+      // 실행 중 취소가 가능하게 해요.
       val promptFile = File(ws, ".agentflow-prompt.txt").apply { writeText(job.prompt) }
       val cmd = props.bridgeCommand.ifBlank { DEFAULT_COMMAND }
-      val r = shell(ws, 1200, cmd, mapOf("PROMPT_FILE" to promptFile.absolutePath))
+      val r = shell(ws, 1200, cmd, mapOf("PROMPT_FILE" to promptFile.absolutePath)) { p -> job.proc = p }
+      job.proc = null
       promptFile.delete()
+      job.log = r.out.takeLast(8000)
+      if (job.canceled) {
+        job.status = "취소"
+        job.note = "사람이 실행을 중단했어요"
+        record(job.taskId, "브리지 취소", "잡 #${job.id} 실행 중단됨")
+        return
+      }
       if (!r.ok) return fail(job, "에이전트 실행 실패 (exit ${r.exit}) — ${r.out.takeLast(400)}")
 
       // 4) 변경 반영 — 커밋·push 후 PR 보장([코드] 제목 → 어드민 자동 연결)
@@ -150,17 +221,18 @@ class LocalBridgeService(
 
   private fun sh(dir: File, timeoutSec: Long, vararg cmd: String): Res = exec(ProcessBuilder(*cmd), dir, timeoutSec)
 
-  private fun shell(dir: File, timeoutSec: Long, script: String, env: Map<String, String>): Res {
+  private fun shell(dir: File, timeoutSec: Long, script: String, env: Map<String, String>, onStart: ((Process) -> Unit)? = null): Res {
     val pb = ProcessBuilder("bash", "-lc", script)
     pb.environment().putAll(env)
-    return exec(pb, dir, timeoutSec)
+    return exec(pb, dir, timeoutSec, onStart)
   }
 
-  private fun exec(pb: ProcessBuilder, dir: File, timeoutSec: Long): Res {
+  private fun exec(pb: ProcessBuilder, dir: File, timeoutSec: Long, onStart: ((Process) -> Unit)? = null): Res {
     pb.directory(dir)
     pb.redirectErrorStream(true)
     return try {
       val p = pb.start()
+      onStart?.invoke(p)
       val out = StringBuilder()
       val reader = Thread.startVirtualThread { p.inputStream.bufferedReader().forEachLine { out.appendLine(it) } }
       if (!p.waitFor(timeoutSec, TimeUnit.SECONDS)) {

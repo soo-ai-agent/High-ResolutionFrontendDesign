@@ -19,6 +19,8 @@ import dev.agentflow.dto.TaskActivityDto
 import dev.agentflow.dto.TaskCommentDto
 import dev.agentflow.dto.TaskDto
 import dev.agentflow.dto.TaskInsightDto
+import dev.agentflow.dto.ReviewQueueDto
+import dev.agentflow.dto.ReviewQueueItemDto
 import dev.agentflow.dto.TaskPatchRequest
 import dev.agentflow.dto.TaskPullDto
 import dev.agentflow.dto.TaskReviewRequest
@@ -49,6 +51,24 @@ class TaskService(
   fun list(projectId: String): List<TaskDto> {
     val project = projects.findById(projectId).orElse(null) ?: return emptyList()
     return tasks.findByProjectIdOrderBySeq(projectId).map { reconcile(project, it).toDto() }
+  }
+
+  // 상태 동기화 스윕 — 스케줄러(30초)가 프로젝트마다 호출해요. UI 조회 없이도 이슈 전이
+  // (닫힘→검토 대기, 재오픈→진행 중)가 반영되도록 — 전이는 reconcile 안에서 멱등이에요.
+  fun reconcileSweep(projectId: String) {
+    val project = projects.findById(projectId).orElse(null) ?: return
+    tasks.findByProjectIdOrderBySeq(projectId).forEach { runCatching { reconcile(project, it) } }
+  }
+
+  // 검토 대기 큐 — 전 프로젝트에서 사람 승인을 기다리는 작업. 헤더 배지가 주기 조회해요.
+  // 상태는 스케줄러 reconcile 이 신선하게 유지하므로 여기선 읽기만 해요(폴링 비용 최소화).
+  fun reviewQueue(): ReviewQueueDto {
+    val items = projects.findAll().flatMap { p ->
+      tasks.findByProjectIdOrderBySeq(p.id)
+        .filter { it.status == "검토 대기" }
+        .map { ReviewQueueItemDto(p.id, p.name, it.id, it.code, it.title, it.updatedAt) }
+    }.sortedByDescending { it.updatedAt }
+    return ReviewQueueDto(items.size, items.take(20))
   }
 
   // 문서를 근거로 작업 분해. 기존 작업(이슈 연결 포함)은 새 계획으로 대체된다.
@@ -91,6 +111,11 @@ class TaskService(
     apply("담당", req.owner, t.owner) { t.owner = it }
     apply("우선순위", req.priority, t.priority) { t.priority = it }
     apply("추정", req.estimate, t.estimate) { t.estimate = it }
+    // 상태는 상태 기계의 알려진 값만 — 임의 문자열로 가드를 우회하는 전이를 막아요.
+    req.status?.let {
+      if (it !in VALID_STATUSES)
+        throw ResponseStatusException(HttpStatus.BAD_REQUEST, "상태는 ${VALID_STATUSES.joinToString("/")} 중 하나여야 해요.")
+    }
     apply("상태", req.status, t.status) { t.status = it }
     if (changes.isNotEmpty()) {
       t.source = "human"
@@ -346,6 +371,9 @@ class TaskService(
     req.enabled?.let { project.autoDispatch = it }
     req.limit?.let { project.dispatchLimit = it.coerceIn(1, 5) }
     req.boardAutoStart?.let { project.boardAutoStart = it }
+    req.reviewLoop?.let { project.reviewLoop = it }
+    req.reviewRoundLimit?.let { project.reviewRoundLimit = it.coerceIn(1, 9) }
+    req.ciRecovery?.let { project.ciRecovery = it }
     projects.save(project)
     // 켜는 즉시 한 번 실행 — 슬롯이 비어 있으면 바로 착수돼요.
     return if (project.autoDispatch) runDispatch(projectId) else dispatchStatus(projectId)
@@ -395,6 +423,9 @@ class TaskService(
       started = started,
       message = message,
       boardAutoStart = project.boardAutoStart,
+      reviewLoop = project.reviewLoop,
+      reviewRoundLimit = project.reviewRoundLimit,
+      ciRecovery = project.ciRecovery,
     )
   }
 
@@ -528,10 +559,15 @@ class TaskService(
     val t = find(projectId, taskId)
     when (req.action) {
       "approve" -> {
+        // 승인은 검토 대기에서만 — 진행 중·대기 작업이 실수 클릭으로 완료되는 것을 막아요.
+        if (t.status != "검토 대기")
+          throw ResponseStatusException(HttpStatus.CONFLICT, "승인은 '검토 대기' 상태에서만 할 수 있어요 (현재: ${t.status}).")
         t.status = "완료"
         record(t.id, "완료", "사람이 검토 승인 → 완료" + (req.comment?.trim().takeUnless { it.isNullOrBlank() }?.let { " — $it" } ?: ""))
       }
       "feedback" -> {
+        if (t.status == "완료")
+          throw ResponseStatusException(HttpStatus.CONFLICT, "완료된 작업이에요 — 후속 작업이 필요하면 새 작업으로 만들어 주세요.")
         val fb = req.comment?.trim().orEmpty()
         if (fb.isEmpty()) throw ResponseStatusException(HttpStatus.BAD_REQUEST, "피드백 내용을 입력해 주세요.")
         t.status = "진행 중"
@@ -670,6 +706,9 @@ class TaskService(
   companion object {
     // 디스패치 단계 순서 — 프론트 BUILD_PHASES 와 동일. 목록에 없는 단계는 마지막으로.
     private val PHASE_ORDER = listOf("스키마", "프론트엔드", "백엔드", "외부 키 발급", "QA", "릴리즈")
+
+    // 상태 기계의 유일한 합법 상태 — patch 의 임의 문자열 우회를 막는 화이트리스트.
+    private val VALID_STATUSES = setOf("대기", "진행 중", "검토 대기", "완료")
 
     private val TASKS_SYSTEM = """
       당신은 시니어 테크리드입니다. 프로젝트 정보와 PRD·IA 발췌를 근거로 구현 작업을 분해하세요.

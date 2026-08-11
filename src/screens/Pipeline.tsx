@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { Icon, Badge, Button, Card, SectionTitle } from "../components/ui"
 import { ACTOR_SUMMARY, PIPELINE_STAGES, FUTURE_INTEGRATION, type PipelineStage, type ProjectItem } from "../data"
-import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, getProjectGantt, getProjectRuns, type ProjectActivity, type RepoWorkflows, type GanttRow, type ActionRun } from "../lib/tasks"
+import { getProjectActivity, listProjectWorkflows, dispatchProjectWorkflow, getProjectGantt, getProjectRuns, getCiRecoveryStatus, runCiRecovery, type ProjectActivity, type RepoWorkflows, type GanttRow, type ActionRun, type CiRecoveryStatus } from "../lib/tasks"
 
 const ACTOR_TONE = {
   ai: { bg: "bg-purple-light", fg: "text-purple", dot: "bg-purple" },
@@ -46,6 +46,8 @@ export default function Pipeline({ navigate, project }: { navigate: (r: string) 
       <GanttCard project={project} />
 
       {/* 외부 워크플로 실행 — 프로젝트 저장소의 Actions 를 대시보드에서 workflow_dispatch 로 */}
+      <CiRecoveryCard project={project} />
+
       <WorkflowRunner project={project} />
 
       {/* 지금 실제로 동작하는 기반(backbone) */}
@@ -363,6 +365,54 @@ function runBadge(r: ActionRun): { label: string; tone: "blue" | "success" | "er
   if (r.conclusion === "success") return { label: "성공", tone: "success" }
   if (r.conclusion === "failure") return { label: "실패", tone: "error" }
   return { label: r.conclusion ?? r.status ?? "완료", tone: "neutral" }
+}
+
+// CI 회복 루프 표면화 — 과거엔 스윕 결과가 스케줄러에서 버려져 보이지 않았어요.
+// 마지막 스윕 시각·지시·보류·오류를 보여주고 수동 스윕도 할 수 있어요. 켜고 끄기는 작업 계획 카드에서.
+function CiRecoveryCard({ project }: { project?: ProjectItem | null }) {
+  const [st, setSt] = useState<CiRecoveryStatus | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState("")
+
+  useEffect(() => {
+    if (!project) return
+    let alive = true
+    const load = () => getCiRecoveryStatus(project.id).then((s) => { if (alive) setSt(s) }).catch(() => {})
+    load()
+    const t = window.setInterval(load, 15_000)
+    return () => { alive = false; window.clearInterval(t) }
+  }, [project])
+
+  if (!project || !st) return null
+  const sweepNow = async () => {
+    setBusy(true); setMsg("")
+    try {
+      const r = await runCiRecovery(project.id)
+      setMsg(r.notified.length ? `지시 보냄: ${r.notified.map((n) => n.taskCode).join(", ")}` : r.message ?? `보낼 지시 없음 (보류 ${r.pending}건)`)
+      setSt(await getCiRecoveryStatus(project.id))
+    } catch (e) { setMsg((e as Error).message) } finally { setBusy(false) }
+  }
+  return (
+    <Card className="p-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex items-center gap-2">
+          <Icon name="sync" className="h-4 w-4 text-blue" />
+          <span className="text-[13px] font-bold text-text-primary">CI 실패 자동 회복</span>
+          <Badge tone={st.enabled ? "success" : "neutral"}>{st.enabled ? "켜짐 · 30초 주기" : "꺼짐"}</Badge>
+        </div>
+        <span className="text-[12px] text-text-secondary">
+          {st.lastAt
+            ? <>마지막 스윕 <b className="text-text-primary">{st.lastAt.slice(11, 19)}</b> · 지시 <b className="text-blue">{st.notified}</b>건 · 보류 <b className="text-text-primary">{st.pending}</b>건</>
+            : "아직 스윕 기록이 없어요"}
+        </span>
+        {st.message && <span className="text-[12px] font-semibold text-error">{st.message}</span>}
+        <div className="ml-auto">
+          <Button variant="secondary" size="sm" onClick={sweepNow} disabled={busy} icon={<Icon name="play" className="h-4 w-4" />}>지금 스윕</Button>
+        </div>
+      </div>
+      {msg && <div className="mt-2 rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] font-medium text-text-secondary">{msg}</div>}
+    </Card>
+  )
 }
 
 function WorkflowRunner({ project }: { project?: ProjectItem | null }) {

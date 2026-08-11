@@ -27,31 +27,35 @@ class ReviewLoopService(
     if (e.state != "open" || e.merged) return
     runCatching {
       for (p in projects.findAll()) {
+        if (!p.reviewLoop) continue // 프로젝트 설정으로 루프 자체를 끌 수 있어요.
         val repoEntry = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == e.repo }
           ?: continue
         val code = e.title?.let { Regex("""\[(T-\d{3})\]""").find(it)?.groupValues?.get(1) } ?: continue
         val t = tasks.findByProjectIdOrderBySeq(p.id)
           .firstOrNull { it.code == code && it.repo == repoEntry.name && it.owner == "ai" && it.status != "완료" }
           ?: continue
+        val limit = p.reviewRoundLimit.coerceIn(1, 9)
+        // 라운드는 이 PR 번호의 '리뷰 지시' 기록 수 — 경계 매칭(#1 이 #12 에 걸리지 않게 뒤에 숫자 금지).
+        val prRef = Regex("""PR #${e.number}(?!\d)""")
         val acts = activities.findByTaskIdOrderBySeqDesc(t.id)
-        val rounds = acts.count { it.kind == "리뷰 지시" && it.note.contains("PR #${e.number}") }
-        if (rounds >= ROUND_LIMIT) {
+        val rounds = acts.count { it.kind == "리뷰 지시" && prRef.containsMatchIn(it.note) }
+        if (rounds >= limit) {
           // 한도 도달은 한 번만 기록 — 이후 push 에는 반응하지 않아요.
-          if (acts.none { it.kind == "리뷰 한도" && it.note.contains("PR #${e.number}") }) {
-            record(t.id, "리뷰 한도", "PR #${e.number} 리뷰 ${ROUND_LIMIT}라운드 초과 — 자동 지시 중단, 사람 검토가 필요해요.")
+          if (acts.none { it.kind == "리뷰 한도" && prRef.containsMatchIn(it.note) }) {
+            record(t.id, "리뷰 한도", "PR #${e.number} 리뷰 ${limit}라운드 초과 — 자동 지시 중단, 사람 검토가 필요해요.")
           }
           return
         }
         val (owner, name) = RepoCoords.of(p.org, repoEntry)
-        dispatcher.instruct(owner, name, e.number, reviewPrompt(t, rounds + 1), t.code, t.id)
-        record(t.id, "리뷰 지시", "PR #${e.number} 자동 리뷰 요청 (라운드 ${rounds + 1}/$ROUND_LIMIT)")
+        dispatcher.instruct(owner, name, e.number, reviewPrompt(t, rounds + 1, limit), t.code, t.id)
+        record(t.id, "리뷰 지시", "PR #${e.number} 자동 리뷰 요청 (라운드 ${rounds + 1}/$limit)")
         return
       }
     }
   }
 
-  private fun reviewPrompt(t: TaskEntity, round: Int) = buildString {
-    appendLine("[${t.code}] 코드 리뷰 요청 (라운드 $round/$ROUND_LIMIT)")
+  private fun reviewPrompt(t: TaskEntity, round: Int, limit: Int) = buildString {
+    appendLine("[${t.code}] 코드 리뷰 요청 (라운드 $round/$limit)")
     appendLine()
     appendLine("이 PR 의 변경을 아래 기준으로 리뷰해 주세요:")
     appendLine("- 저장소 CLAUDE.md 의 코드 작성 규칙 준수 여부")
@@ -64,9 +68,5 @@ class ReviewLoopService(
 
   private fun record(taskId: String, kind: String, note: String) {
     activities.save(TaskActivityEntity(taskId = taskId, at = Instant.now().toString(), kind = kind, note = note))
-  }
-
-  companion object {
-    private const val ROUND_LIMIT = 3
   }
 }

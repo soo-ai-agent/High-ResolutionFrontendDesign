@@ -131,6 +131,11 @@ class ProjectEntity(
   // 보드 트리거(B안) — GitHub Projects 카드가 In Progress 로 이동하면 매칭 작업 자동 착수.
   // 끄면 보드 이동은 미러에만 반영되고 착수는 일어나지 않아요.
   @ColumnDefault("true") var boardAutoStart: Boolean = true,
+  // 자동 코드리뷰 루프 — PR 이 열리거나 push 되면 리뷰 지시. 라운드 한도 초과 시 사람 에스컬레이션.
+  @ColumnDefault("true") var reviewLoop: Boolean = true,
+  @ColumnDefault("3") var reviewRoundLimit: Int = 3,
+  // CI 실패 자동 회복 — 실패 Actions 실행에 수정 지시(실행당 1회).
+  @ColumnDefault("true") var ciRecovery: Boolean = true,
 )
 
 // 단일 행 메타 — 미러 마지막 갱신 시각(summary.updatedAt).

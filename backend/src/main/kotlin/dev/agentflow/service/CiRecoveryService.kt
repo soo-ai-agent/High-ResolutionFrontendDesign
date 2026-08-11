@@ -10,6 +10,7 @@ import dev.agentflow.domain.TaskEntity
 import dev.agentflow.domain.TaskRepository
 import dev.agentflow.dto.CiRecoveryItemDto
 import dev.agentflow.dto.CiRecoveryResultDto
+import dev.agentflow.dto.CiRecoveryStatusDto
 import dev.agentflow.util.RepoCoords
 import org.springframework.http.HttpStatus
 import org.springframework.stereotype.Service
@@ -28,6 +29,18 @@ class CiRecoveryService(
   private val pulls: PullRepository,
   private val dispatcher: AgentDispatchService,
 ) {
+  // 마지막 스윕 결과 — 과거엔 스케줄러의 runCatching 으로 버려져 UI 에서 볼 수 없었어요.
+  // 이제 프로젝트별로 남겨 /ci-recovery/status 가 보여줘요(메모리 — 재시작 시 초기화).
+  private data class SweepMemo(val at: String, val notified: Int, val pending: Int, val message: String?)
+  private val lastSweep = java.util.concurrent.ConcurrentHashMap<String, SweepMemo>()
+
+  fun status(projectId: String): CiRecoveryStatusDto {
+    val project = projects.findById(projectId).orElse(null)
+      ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
+    val memo = lastSweep[projectId]
+    return CiRecoveryStatusDto(project.ciRecovery, memo?.at, memo?.notified ?: 0, memo?.pending ?: 0, memo?.message)
+  }
+
   fun sweep(projectId: String): CiRecoveryResultDto {
     val project = projects.findById(projectId).orElse(null)
       ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "프로젝트가 없어요.")
@@ -59,6 +72,7 @@ class CiRecoveryService(
         notified += CiRecoveryItemDto(task.code, run.name ?: "workflow", run.htmlUrl, prNumber, task.issueNumber)
       }
     }
+    lastSweep[projectId] = SweepMemo(Instant.now().toString(), notified.size, pending, failMsg)
     return CiRecoveryResultDto(notified, pending, failMsg)
   }
 

@@ -69,12 +69,15 @@ export type DispatchStatus = {
   started: Task[]
   message: string | null
   boardAutoStart: boolean
+  reviewLoop: boolean
+  reviewRoundLimit: number
+  ciRecovery: boolean
 }
 
 export const getDispatch = (projectId: string) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`)
 
-export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?: number; boardAutoStart?: boolean }) =>
+export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?: number; boardAutoStart?: boolean; reviewLoop?: boolean; reviewRoundLimit?: number; ciRecovery?: boolean }) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -83,6 +86,19 @@ export const setDispatch = (projectId: string, cfg: { enabled?: boolean; limit?:
 
 export const runDispatchNow = (projectId: string) =>
   j<DispatchStatus>(`/api/mirror/projects/${projectId}/dispatch/run`, { method: "POST" })
+
+// ---- CI 실패 자동 회복 — 상태(마지막 스윕) 조회 + 수동 스윕 ----
+export type CiRecoveryStatus = { enabled: boolean; lastAt: string | null; notified: number; pending: number; message: string | null }
+export const getCiRecoveryStatus = (projectId: string) =>
+  j<CiRecoveryStatus>(`/api/mirror/projects/${projectId}/ci-recovery/status`)
+export const runCiRecovery = (projectId: string) =>
+  j<{ notified: { taskCode: string; prNumber: number | null }[]; pending: number; message: string | null }>(
+    `/api/mirror/projects/${projectId}/ci-recovery/run`, { method: "POST" },
+  )
+
+// ---- 검토 대기 큐 — 사람 승인을 기다리는 작업 (헤더 배지) ----
+export type ReviewQueue = { count: number; items: { projectId: string; projectName: string; taskId: string; code: string; title: string; updatedAt: string }[] }
+export const getReviewQueue = () => j<ReviewQueue>("/api/mirror/review-queue")
 
 // ---- 에이전트 활동 피드 — 작업 활동 + Actions 실행 + 웹훅 이벤트 통합 타임라인 ----
 export type ProjectActivity = {

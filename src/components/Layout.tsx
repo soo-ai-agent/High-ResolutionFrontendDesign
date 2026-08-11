@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react"
+import { useEffect, useState, type ReactNode } from "react"
 import { Icon, IconButton, Badge, SyncMark } from "./ui"
 import type { ProjectItem } from "../data"
 import { useServerStatus } from "../lib/status"
@@ -47,6 +47,17 @@ export default function Layout({ route, navigate, project, children }: { route: 
 function Header({ navigate, project, onMenu }: { navigate: (r: string) => void; project?: ProjectItem | null; onMenu: () => void }) {
   const [repoOpen, setRepoOpen] = useState(false)
   const { connected, user, summary } = useServerStatus()
+  // 검토 대기 배지 — 사람 승인을 기다리는 작업 수. 루프의 닫힘이 사람에게 달렸을 때
+  // 화면을 돌아다니지 않아도 알 수 있게 헤더에서 15초마다 조회해요.
+  const [reviewCount, setReviewCount] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const load = () =>
+      fetch("/api/mirror/review-queue").then((r) => r.json()).then((q) => { if (alive) setReviewCount(q.count ?? 0) }).catch(() => {})
+    load()
+    const t = window.setInterval(load, 15_000)
+    return () => { alive = false; window.clearInterval(t) }
+  }, [])
   return (
     <header className="relative flex h-16 shrink-0 items-center gap-4 border-b border-line bg-surface px-5">
       <button onClick={onMenu} className="flex h-9 w-9 items-center justify-center rounded-[10px] text-text-secondary hover:bg-hover lg:hidden" aria-label="메뉴">
@@ -97,6 +108,14 @@ function Header({ navigate, project, onMenu }: { navigate: (r: string) => void; 
 
       <div className="ml-auto flex items-center gap-3">
         <div className="hidden xl:block"><SyncMark synced={connected} /></div>
+
+        {/* 검토 대기 배지 — 클릭하면 휴먼태스크로 이동해 승인/피드백 */}
+        {reviewCount > 0 && (
+          <button onClick={() => navigate("human-tasks")} className="flex items-center gap-1.5 rounded-full bg-warning-light px-3 py-1.5 hover:brightness-95" title="사람 승인을 기다리는 작업 — 클릭해서 검토">
+            <span className="h-1.5 w-1.5 rounded-full bg-warning" />
+            <span className="text-[12px] font-bold text-[#b47908]">검토 대기 {reviewCount}</span>
+          </button>
+        )}
 
         {/* 실제 GitHub 연결 상태 (프록시 /api/github/status) */}
         {connected ? (

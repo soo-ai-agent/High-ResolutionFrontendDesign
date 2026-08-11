@@ -119,6 +119,9 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
   }
   const toggleDispatch = () => run(async () => applyDispatch(await setDispatch(project.id, { enabled: !(dispatch?.enabled ?? false) })))
   const toggleBoardAutoStart = () => run(async () => applyDispatch(await setDispatch(project.id, { boardAutoStart: !(dispatch?.boardAutoStart ?? true) })))
+  const toggleReviewLoop = () => run(async () => applyDispatch(await setDispatch(project.id, { reviewLoop: !(dispatch?.reviewLoop ?? true) })))
+  const changeReviewLimit = (n: number) => run(async () => applyDispatch(await setDispatch(project.id, { reviewRoundLimit: n })))
+  const toggleCiRecovery = () => run(async () => applyDispatch(await setDispatch(project.id, { ciRecovery: !(dispatch?.ciRecovery ?? true) })))
   const changeLimit = (n: number) => run(async () => applyDispatch(await setDispatch(project.id, { limit: n })))
   const dispatchNow = () => run(async () => applyDispatch(await runDispatchNow(project.id)))
 
@@ -201,9 +204,29 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
                 <Button variant="secondary" size="sm" onClick={dispatchNow} disabled={busy} icon={<Icon name="play" className="h-4 w-4" />}>지금 실행</Button>
               </div>
             </div>
+            {/* 루프 설정 — 리뷰 왕복·CI 회복도 프로젝트별로 켜고 끄고 한도를 조절해요 */}
+            <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-line pt-3">
+              <div className="flex items-center gap-2" title="PR 이 열리거나 커밋이 push 되면 자동으로 리뷰를 지시해요. 한도 초과 시 자동 지시를 멈추고 사람 검토로 넘겨요.">
+                <span className="text-[12px] font-semibold text-text-secondary">자동 리뷰 루프</span>
+                <Toggle on={dispatch?.reviewLoop ?? true} onChange={toggleReviewLoop} />
+              </div>
+              <label className="flex items-center gap-1.5 text-[12px] text-text-secondary" title="PR 당 자동 리뷰 왕복 한도 — 초과하면 '리뷰 한도' 기록과 함께 사람 검토로 에스컬레이션">
+                한도
+                <select value={dispatch?.reviewRoundLimit ?? 3} onChange={(e) => changeReviewLimit(Number(e.target.value))}
+                  disabled={!(dispatch?.reviewLoop ?? true)}
+                  className="h-8 rounded-[8px] border border-line bg-surface px-1.5 text-[12px] outline-none focus:border-blue disabled:opacity-50">
+                  {[1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
+                </select>
+                라운드
+              </label>
+              <div className="flex items-center gap-2" title="실패한 Actions 실행에 수정 지시를 자동으로 보내요(실행당 1회). 상태는 진행 흐름 화면의 CI 회복 카드에서 봐요.">
+                <span className="text-[12px] font-semibold text-text-secondary">CI 자동 회복</span>
+                <Toggle on={dispatch?.ciRecovery ?? true} onChange={toggleCiRecovery} />
+              </div>
+            </div>
             <p className="mt-2 text-[11px] leading-relaxed text-text-tertiary">
-              켜 두면 30초마다 현재 단계의 대기 중 AI 작업을 우선순위(P1→P3) 순으로, 동시 실행 한도 안에서 자동 착수해요(이슈 생성 + @claude 지시).
-              앞 단계 작업이 모두 완료돼야 다음 단계로 넘어가요.
+              켜 두면 30초마다 현재 단계의 대기 중 AI 작업을 우선순위(P1→P3) 순으로, 동시 실행 한도 안에서 자동 착수해요(이슈 생성 + 에이전트 지시).
+              앞 단계 작업이 모두 완료돼야 다음 단계로 넘어가요. 상태 동기화(이슈 닫힘→검토 대기)도 같은 주기로 서버가 돌려서, 화면을 열지 않아도 반영돼요.
             </p>
             {dispatch?.message && <div className="mt-2 rounded-[8px] bg-surface-2 px-3 py-2 text-[12px] font-medium text-text-secondary">{dispatch.message}</div>}
           </Card>

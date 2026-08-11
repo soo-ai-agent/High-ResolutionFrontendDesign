@@ -21,4 +21,20 @@ class BridgeController(
     req.mode?.let { dispatch.setMode(it) }
     return bridge.status(dispatch.mode())
   }
+
+  // ---- 잡 제어 — 대기 취소·실행 중단·재시도·로그 ----
+  @PostMapping("/jobs/{id}/cancel")
+  fun cancel(@PathVariable id: Long): BridgeStatusDto {
+    bridge.cancel(id)
+    return bridge.status(dispatch.mode())
+  }
+
+  @PostMapping("/jobs/{id}/retry")
+  fun retry(@PathVariable id: Long): BridgeStatusDto {
+    bridge.retry(id)
+    return bridge.status(dispatch.mode())
+  }
+
+  @GetMapping("/jobs/{id}/log", produces = ["text/plain;charset=UTF-8"])
+  fun log(@PathVariable id: Long): String = bridge.jobLog(id)
 }

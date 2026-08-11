@@ -5,7 +5,7 @@ import { listTasks, patchTask, syncTaskIssue, getTaskInsight, reviewTask, type T
 
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
-import { getBridgeStatus, setBridgeMode, type BridgeStatus } from "../lib/bridge"
+import { getBridgeStatus, setBridgeMode, cancelBridgeJob, retryBridgeJob, bridgeJobLog, getCapabilities, type BridgeStatus, type Capabilities } from "../lib/bridge"
 
 const TOKEN_RE = /^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)/
 // 프록시 쓰기(repo)·웹훅 등록(admin:repo_hook)·Actions 조회(workflow) 권한을 미리 담아요.
@@ -388,15 +388,53 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
       <SectionTitle title="연동 설정" desc="GitHub 계정을 연결하면 미러·이슈·웹훅이 실제로 동작해요." />
       <GitHubConnect navigate={navigate} />
       <AgentModeCard />
+      <ServerConfigCard />
     </div>
   )
 }
 
+// 서버 구성 상태 — 루프가 실제로 돌 수 있는 설정인지 한눈에. "설정은 됐는데 동작 안 함"을 미리 드러내요.
+function ServerConfigCard() {
+  const [cap, setCap] = useState<Capabilities | null>(null)
+  useEffect(() => { getCapabilities().then(setCap).catch(() => {}) }, [])
+  if (!cap) return null
+  const rows: { label: string; ok: boolean; on: string; off: string }[] = [
+    { label: "LLM 키 (문서·작업 분해)", ok: cap.llm !== "none", on: cap.llm === "anthropic" ? "Claude 사용" : "OpenAI 사용", off: "없음 — 템플릿 폴백으로 동작 (서버 ANTHROPIC_API_KEY 권장)" },
+    { label: "GitHub 쓰기 (PAT)", ok: cap.githubConnected, on: "연결됨 — 이슈·코멘트·동기화 가능", off: "미연결 — 착수·분해·동기화가 GitHub 에 못 써요 (위 연동에서 연결)" },
+    { label: "웹훅 서명 검증", ok: cap.webhookSecretSet, on: "시크릿 설정됨", off: "미설정 — 이벤트가 '미검증'으로 수신돼요 (운영은 GITHUB_WEBHOOK_SECRET 필수)" },
+    ...(cap.agentMode === "local" ? [
+      { label: "브리지 실행 명령", ok: cap.bridgeCliAvailable, on: "실행 가능", off: "명령을 찾을 수 없어요 — claude CLI 설치·로그인 (또는 BRIDGE_COMMAND 확인)" },
+      { label: "git (브리지 클론·push)", ok: cap.gitAvailable, on: "설치됨", off: "git 이 없어요 — 브리지가 저장소를 다룰 수 없어요" },
+    ] : []),
+    { label: "대시보드 테스트 실행", ok: cap.e2eCommandSet, on: "E2E_COMMAND 설정됨", off: "미설정 — 테스트 리포트의 실행 버튼이 안내만 해요 (E2E_COMMAND=node e2e/run.mjs)" },
+  ]
+  return (
+    <Card className="p-5">
+      <div className="mb-3">
+        <div className="text-[14px] font-bold text-text-primary">서버 구성 상태</div>
+        <p className="mt-1 text-[12px] text-text-secondary">자동화 루프가 실제로 돌 수 있는 구성인지 점검해요 — 꺼진 항목은 해당 루프가 폴백·생략으로 동작해요.</p>
+      </div>
+      <div className="divide-y divide-line rounded-[10px] border border-line">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-center gap-3 px-3.5 py-2.5 text-[13px]">
+            <span className={`h-2 w-2 shrink-0 rounded-full ${r.ok ? "bg-success" : "bg-warning"}`} />
+            <span className="w-56 shrink-0 font-semibold text-text-primary">{r.label}</span>
+            <span className={`min-w-0 flex-1 text-[12px] ${r.ok ? "text-text-secondary" : "font-semibold text-[#b47908]"}`}>{r.ok ? r.on : r.off}</span>
+          </div>
+        ))}
+      </div>
+    </Card>
+  )
+}
+
 // 에이전트 실행 모드 — 착수·피드백·리뷰·CI 회복 지시를 어디서 실행할지 골라요.
+// 로컬 모드에선 잡 큐를 제어(취소·재시도·로그)할 수 있고, CLI 미설치를 미리 경고해요.
 function AgentModeCard() {
   const [status, setStatus] = useState<BridgeStatus | null>(null)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState("")
+  const [logId, setLogId] = useState<number | null>(null)
+  const [logText, setLogText] = useState("")
 
   const load = () => getBridgeStatus().then(setStatus).catch((e) => setErr((e as Error).message))
   useEffect(() => {
@@ -408,6 +446,14 @@ function AgentModeCard() {
   const choose = async (mode: "github" | "local") => {
     setBusy(true); setErr("")
     try { setStatus(await setBridgeMode(mode)) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const act = async (fn: () => Promise<BridgeStatus>) => {
+    setBusy(true); setErr("")
+    try { setStatus(await fn()) } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const viewLog = async (id: number) => {
+    if (logId === id) { setLogId(null); return }
+    try { setLogText(await bridgeJobLog(id)); setLogId(id) } catch (e) { setErr((e as Error).message) }
   }
 
   return (
@@ -426,16 +472,36 @@ function AgentModeCard() {
           <span className="text-[12px] text-text-secondary">대기 <b className="text-text-primary">{status.queued}</b>{status.running && <> · <b className="text-blue">실행 중</b></>}</span>
         )}
       </div>
+      {/* 실행 가능성 경고 — 모드는 로컬인데 실행 명령이 없으면 잡이 전부 실패해요 */}
+      {status?.mode === "local" && !status.cliAvailable && (
+        <div className="rounded-[10px] bg-warning-light px-3 py-2.5 text-[12px] font-semibold text-[#b47908]">
+          ⚠ 실행 명령을 찾을 수 없어요 — 이 서버에 claude CLI 를 설치·로그인하거나 BRIDGE_COMMAND 를 확인하세요.
+          현재 명령: <code className="font-mono font-normal">{status.command}</code>
+        </div>
+      )}
       {err && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{err}</div>}
       {status?.mode === "local" && status.jobs.length > 0 && (
         <div className="divide-y divide-line rounded-[10px] border border-line">
-          {status.jobs.map((jb, i) => (
-            <div key={i} className="flex items-center gap-2 px-3 py-2 text-[12px]">
-              <Badge tone={jb.status === "완료" ? "success" : jb.status === "실패" ? "error" : jb.status === "실행 중" ? "blue" : "neutral"}>{jb.status}</Badge>
-              <span className="font-mono text-text-secondary">{jb.repo}#{jb.number}</span>
-              {jb.taskCode && <Badge tone="purple">{jb.taskCode}</Badge>}
-              <span className="min-w-0 flex-1 truncate text-text-tertiary" title={jb.note}>{jb.note}</span>
-              {jb.prUrl && <a href={jb.prUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue hover:underline">PR</a>}
+          {status.jobs.map((jb) => (
+            <div key={jb.id}>
+              <div className="flex items-center gap-2 px-3 py-2 text-[12px]">
+                <span className="font-mono text-[11px] text-text-disabled">#{jb.id}</span>
+                <Badge tone={jb.status === "완료" ? "success" : jb.status === "실패" ? "error" : jb.status === "실행 중" ? "blue" : "neutral"}>{jb.status}</Badge>
+                <span className="font-mono text-text-secondary">{jb.repo}#{jb.number}</span>
+                {jb.taskCode && <Badge tone="purple">{jb.taskCode}</Badge>}
+                <span className="min-w-0 flex-1 truncate text-text-tertiary" title={jb.note}>{jb.note}</span>
+                {jb.prUrl && <a href={jb.prUrl} target="_blank" rel="noreferrer" className="font-semibold text-blue hover:underline">PR</a>}
+                {(jb.status === "대기" || jb.status === "실행 중") && (
+                  <button onClick={() => act(() => cancelBridgeJob(jb.id))} disabled={busy} className="rounded-[8px] bg-error-light px-2 py-1 font-semibold text-error hover:brightness-95 disabled:opacity-50">취소</button>
+                )}
+                {(jb.status === "실패" || jb.status === "취소") && (
+                  <button onClick={() => act(() => retryBridgeJob(jb.id))} disabled={busy} className="rounded-[8px] bg-blue-light px-2 py-1 font-semibold text-blue hover:brightness-95 disabled:opacity-50">재시도</button>
+                )}
+                <button onClick={() => viewLog(jb.id)} className="rounded-[8px] bg-surface-2 px-2 py-1 font-semibold text-text-secondary hover:bg-hover">{logId === jb.id ? "로그 닫기" : "로그"}</button>
+              </div>
+              {logId === jb.id && (
+                <pre className="max-h-56 overflow-auto whitespace-pre-wrap border-t border-line bg-surface-2 px-3 py-2 font-mono text-[11px] leading-relaxed text-text-secondary">{logText}</pre>
+              )}
             </div>
           ))}
         </div>

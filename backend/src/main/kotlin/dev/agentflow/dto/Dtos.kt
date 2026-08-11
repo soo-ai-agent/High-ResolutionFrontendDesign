@@ -24,6 +24,9 @@ data class ProjectDto(
   val autoDispatch: Boolean = false,
   val dispatchLimit: Int = 2,
   val boardAutoStart: Boolean = true,
+  val reviewLoop: Boolean = true,
+  val reviewRoundLimit: Int = 3,
+  val ciRecovery: Boolean = true,
 )
 
 // ---- 자동 디스패치 (우선순위·단계 순서 기반 자동 착수) ----
@@ -36,8 +39,18 @@ data class DispatchStatusDto(
   val started: List<TaskDto> = emptyList(), // 이번 실행에서 착수된 작업
   val message: String? = null,
   val boardAutoStart: Boolean = true, // 보드 트리거(B안) 스위치
+  val reviewLoop: Boolean = true, // 자동 코드리뷰 루프 스위치
+  val reviewRoundLimit: Int = 3, // 리뷰 왕복 한도 (초과 시 사람 에스컬레이션)
+  val ciRecovery: Boolean = true, // CI 실패 자동 회복 스위치
 )
-data class DispatchConfigRequest(val enabled: Boolean?, val limit: Int?, val boardAutoStart: Boolean? = null)
+data class DispatchConfigRequest(
+  val enabled: Boolean? = null,
+  val limit: Int? = null,
+  val boardAutoStart: Boolean? = null,
+  val reviewLoop: Boolean? = null,
+  val reviewRoundLimit: Int? = null,
+  val ciRecovery: Boolean? = null,
+)
 
 // ---- 외부 워크플로 실행 (workflow_dispatch) ----
 data class WorkflowDto(val id: Long, val name: String, val path: String, val state: String)
@@ -55,17 +68,40 @@ data class BoardKickoffResponse(
 
 // ---- 에이전트 실행 모드 + 로컬 브리지 (Actions 없이 서버 머신에서 claude CLI 실행) ----
 data class BridgeJobDto(
+  val id: Long,
   val at: String,
   val repo: String, // owner/name
   val number: Long,
   val taskCode: String?,
-  val status: String, // 대기 / 실행 중 / 완료 / 실패
+  val status: String, // 대기 / 실행 중 / 완료 / 실패 / 취소
   val note: String,
   val branch: String?,
   val prUrl: String?,
 )
-data class BridgeStatusDto(val mode: String, val queued: Int, val running: Boolean, val jobs: List<BridgeJobDto>)
+data class BridgeStatusDto(
+  val mode: String,
+  val queued: Int,
+  val running: Boolean,
+  val cliAvailable: Boolean, // 브리지 실행 명령(claude CLI 등)이 이 서버에 있는지
+  val command: String, // 현재 사용될 실행 명령 (기본 또는 BRIDGE_COMMAND)
+  val jobs: List<BridgeJobDto>,
+)
 data class BridgeConfigRequest(val mode: String? = null) // github | local
+
+// ---- 검토 대기 큐 — 사람 승인을 기다리는 작업 (헤더 배지) ----
+data class ReviewQueueItemDto(val projectId: String, val projectName: String, val taskId: String, val code: String, val title: String, val updatedAt: String)
+data class ReviewQueueDto(val count: Int, val items: List<ReviewQueueItemDto>)
+
+// ---- 서버 구성 상태 — 루프가 실제로 돌 수 있는 설정인지 UI 가 보여줘요 ----
+data class CapabilitiesDto(
+  val llm: String, // anthropic | openai | none — 문서·작업 분해 에이전트
+  val webhookSecretSet: Boolean, // 웹훅 서명 검증 (운영 필수)
+  val githubConnected: Boolean, // PAT — 이슈·코멘트·동기화 쓰기
+  val agentMode: String, // github | local
+  val bridgeCliAvailable: Boolean, // 로컬 브리지의 claude CLI 설치 여부
+  val gitAvailable: Boolean, // 로컬 브리지의 git 설치 여부
+  val e2eCommandSet: Boolean, // 대시보드 테스트 실행 명령
+)
 
 // ---- CI 실패 자동 회복 ----
 data class CiRecoveryItemDto(
@@ -80,6 +116,8 @@ data class CiRecoveryResultDto(
   val pending: Int, // 매칭 실패·지시 실패로 보류된 실행 수 (다음 스윕에 재시도)
   val message: String? = null,
 )
+// 회복 루프 표면화 — 마지막 스윕이 언제 무엇을 했는지 (진행 흐름 화면 카드)
+data class CiRecoveryStatusDto(val enabled: Boolean, val lastAt: String?, val notified: Int, val pending: Int, val message: String?)
 
 // ---- E2E 테스트 리포트 — 실행별 케이스 결과 + 캡처 스크린샷 ----
 data class E2eCaseDto(val name: String, val ok: Boolean)
