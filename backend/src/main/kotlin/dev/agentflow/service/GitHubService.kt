@@ -86,6 +86,31 @@ class GitHubService(
     return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), text)
   }
 
+  // 일반 코멘트 — @claude 접두를 붙이지 않아요. 분해 요약처럼 에이전트를 깨우면 안 되는 회신용.
+  fun comment(owner: String, repo: String, number: Long, body: String): CommentResult {
+    val t = tokenOr401()
+    val j = translate {
+      client.post().uri("/repos/{o}/{r}/issues/{n}/comments", owner, repo, number).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(mapOf("body" to body)).retrieve().body(JsonNode::class.java)
+    }!!
+    return CommentResult(j.path("id").asLong(), j.path("html_url").asText(), body)
+  }
+
+  // ---- 이슈 라벨 — 분해 트리거 라벨의 붙이기·떼기(재트리거 방지)에 써요 ----
+  fun addLabels(owner: String, repo: String, number: Long, labels: List<String>) {
+    if (labels.isEmpty()) return
+    val t = tokenOr401()
+    translate {
+      client.post().uri("/repos/{o}/{r}/issues/{n}/labels", owner, repo, number).headers(auth(t)).contentType(MediaType.APPLICATION_JSON).body(mapOf("labels" to labels)).retrieve().toBodilessEntity()
+    }
+  }
+
+  fun removeLabel(owner: String, repo: String, number: Long, label: String) {
+    val t = tokenOr401()
+    translate {
+      client.delete().uri("/repos/{o}/{r}/issues/{n}/labels/{l}", owner, repo, number, label).headers(auth(t)).retrieve().toBodilessEntity()
+    }
+  }
+
   // 파일 쓰기(contents API) — 있으면 갱신(sha 필요), 없으면 생성. CLAUDE.md·스킬 동기화에 써요.
   // 문서 동기화는 읽기와 같은 폴백을 허용해요: UI PAT → 서버 환경 GITHUB_TOKEN.
   fun putFile(owner: String, repo: String, path: String, content: String, message: String): String {

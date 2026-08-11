@@ -140,7 +140,7 @@ export default function TasksScreen({ project }: { project: ProjectItem | null }
     <div className="space-y-6">
       <SectionTitle
         title="작업 계획"
-        desc="PRD·IA 문서를 근거로 에이전트가 분해한 작업이에요. 각각 수정할 수 있고, 태스크별로 GitHub 이슈에 동기화해요."
+        desc="PRD·IA 문서를 근거로 에이전트가 분해한 작업이에요. 각각 수정할 수 있고, 태스크별로 GitHub 이슈에 동기화해요. GitHub 이슈에 'agent-flow:분해' 라벨을 붙이면 그 이슈도 [T-00x] 작업들로 분해돼 여기에 추가돼요."
         action={tasks.length ? (
           <Button variant="secondary" size="sm" onClick={regenerate} disabled={busy} icon={<Icon name="sparkle" className="h-4 w-4" />}>{busy ? "생성 중…" : "다시 분해"}</Button>
         ) : undefined}

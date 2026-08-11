@@ -30,6 +30,21 @@ data class PullActivity(
   val action: String?,
 )
 
+// 분해 트리거 라벨 — GitHub 이슈에 이 라벨을 붙이면 어드민이 정식 [T-00x] 작업들로 분해해요.
+// 처리 후엔 완료 라벨로 교체돼 재트리거를 막아요(다시 분해하려면 완료 라벨을 떼고 다시 붙이세요).
+const val DECOMPOSE_LABEL = "agent-flow:분해"
+const val DECOMPOSE_DONE_LABEL = "agent-flow:분해완료"
+
+// 라벨 분해 요청 이벤트 — TaskService 가 구독해 이슈를 작업 계획으로 분해해요(순환 의존 없이).
+data class IssueDecomposeRequested(
+  val repo: String,
+  val number: Long,
+  val title: String?,
+  val body: String?,
+  val htmlUrl: String?,
+  val labels: List<String>,
+)
+
 @Service
 @Transactional
 class MirrorService(
@@ -138,6 +153,11 @@ class MirrorService(
         val i = payload.path("issue")
         upsertIssue(repoFull ?: "", i.path("number").asLong(), i.str("title"), i.str("state"), labelsOf(i.path("labels")), i.path("user").str("login"), i.str("html_url"), i.str("updated_at"), i.str("node_id"))
         summary = "issue #${i.path("number").asLong()} ${payload.str("action") ?: ""}".trim()
+        // 분해 라벨이 "붙는 순간"에만 발행 — labeled 액션의 label 필드가 그 한 개를 가리켜요.
+        if (payload.str("action") == "labeled" && payload.path("label").str("name") == DECOMPOSE_LABEL) {
+          publisher.publishEvent(IssueDecomposeRequested(repoFull ?: "", i.path("number").asLong(), i.str("title"), i.str("body"), i.str("html_url"), labelsOf(i.path("labels"))))
+          summary += " · 분해 요청"
+        }
       }
       event == "pull_request" && payload.has("pull_request") -> {
         val p = payload.path("pull_request")

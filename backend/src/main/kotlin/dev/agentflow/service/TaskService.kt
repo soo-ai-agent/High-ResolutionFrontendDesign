@@ -197,6 +197,99 @@ class TaskService(
     }
   }
 
+  // 라벨 분해 트리거 — 이슈에 'agent-flow:분해' 라벨이 붙으면 그 이슈를 정식 [T-00x] 작업들로
+  // 분해해 기존 작업 계획에 "추가"해요(generate 와 달리 대체하지 않아요). 새 작업의 이슈 생성·
+  // 요약 코멘트·라벨 정리는 PAT 이 있을 때만 — 실패해도 어드민 작업 생성은 유지돼요.
+  // 실패는 웹훅 처리를 막지 않게 조용히 넘겨요.
+  @EventListener
+  fun onDecomposeRequested(e: IssueDecomposeRequested) {
+    if (DECOMPOSE_DONE_LABEL in e.labels) return // 이미 분해된 이슈 — 재분해는 완료 라벨을 떼고 다시 붙이세요.
+    runCatching {
+      for (p in projects.findAll()) {
+        val repoName = p.repos.firstOrNull { r -> RepoCoords.of(p.org, r).let { (o, n) -> "$o/$n" } == e.repo }?.name
+          ?: continue
+        decomposeIssue(p, repoName, e)
+        return
+      }
+    }
+  }
+
+  private fun decomposeIssue(project: ProjectEntity, repoName: String, e: IssueDecomposeRequested) {
+    val existing = tasks.findByProjectIdOrderBySeq(project.id)
+    val agentTasks = parseAgentTasks(llm.complete(ISSUE_TASKS_SYSTEM, issueBrief(project, repoName, existing, e), maxTokens = 4000))
+    val items = agentTasks ?: checklistTasks(project, repoName, e)
+    if (items.isEmpty()) return
+    val now = Instant.now().toString()
+    var seq = existing.maxOfOrNull { it.seq } ?: 0
+    // 코드는 기존 최대 번호에 이어서 서버가 부여 — 에이전트 출력의 code 는 충돌 방지를 위해 무시해요.
+    var codeNum = existing.mapNotNull { Regex("""T-(\d+)""").find(it.code)?.groupValues?.get(1)?.toIntOrNull() }.maxOrNull() ?: 0
+    val saved = items.map { t ->
+      seq += 1; codeNum += 1
+      t.id = "${project.id}:$seq"
+      t.projectId = project.id
+      t.seq = seq
+      t.code = "T-%03d".format(codeNum)
+      if (t.repo.isBlank() || project.repos.none { r -> r.name == t.repo }) t.repo = repoName
+      t.source = if (agentTasks != null) "agent" else "template"
+      t.updatedAt = now
+      val s = tasks.save(t)
+      record(s.id, "생성", "이슈 #${e.number} 분해로 생성 (${DECOMPOSE_LABEL} 라벨 트리거)")
+      s
+    }
+    // 새 작업 → GitHub 이슈 생성·연결 (작업별 담당 저장소 기준, PAT 없으면 조용히 생략)
+    saved.forEach { t ->
+      runCatching {
+        val r = project.repos.firstOrNull { it.name == t.repo } ?: return@runCatching
+        val (o, n) = RepoCoords.of(project.org, r)
+        createAndLinkIssue(project, t, o, n)
+        tasks.save(t)
+      }
+    }
+    // 원본 이슈 회신·라벨 정리 — 요약은 일반 코멘트로(@claude 를 붙이면 에이전트가 오발동해요).
+    val (owner, name) = RepoCoords.of(project.org, project.repos.first { it.name == repoName })
+    runCatching {
+      gitHub.comment(owner, name, e.number, buildString {
+        appendLine("🧩 Agent Flow 가 이 이슈를 작업 ${saved.size}건으로 분해했어요:")
+        appendLine()
+        saved.forEach { t ->
+          appendLine("- [${t.code}] ${t.title} (${t.phase} · ${t.owner} · ${t.priority})" + (t.issueUrl?.let { " → $it" } ?: ""))
+        }
+        appendLine()
+        appendLine("착수는 어드민 작업 계획에서 진행돼요 — 착수 버튼 또는 자동 디스패치가 이어받아요.")
+      })
+    }
+    runCatching { gitHub.addLabels(owner, name, e.number, listOf(DECOMPOSE_DONE_LABEL)) }
+    runCatching { gitHub.removeLabel(owner, name, e.number, DECOMPOSE_LABEL) }
+  }
+
+  private fun issueBrief(p: ProjectEntity, repoName: String, existing: List<TaskEntity>, e: IssueDecomposeRequested) = buildString {
+    appendLine("프로젝트명: ${p.name}")
+    appendLine("설명: ${p.desc}")
+    appendLine("저장소:")
+    p.repos.forEach { appendLine("- ${it.name} (${it.purpose})") }
+    appendLine("라벨이 붙은 저장소: $repoName")
+    if (existing.isNotEmpty()) {
+      appendLine()
+      appendLine("[기존 작업 — 중복되는 일은 만들지 마세요]")
+      existing.forEach { appendLine("- [${it.code}] ${it.title} (${it.phase} · ${it.status})") }
+    }
+    appendLine()
+    appendLine("[분해할 이슈 #${e.number}]")
+    appendLine("제목: ${e.title ?: ""}")
+    appendLine(e.body?.take(4000) ?: "")
+  }
+
+  // 키가 없을 때의 결정적 분해 — 이슈 본문의 체크리스트(- [ ] …)를 작업으로, 없으면 이슈 전체를 1건으로.
+  private fun checklistTasks(p: ProjectEntity, repoName: String, e: IssueDecomposeRequested): List<TaskEntity> {
+    val phase = if (p.repos.firstOrNull { it.name == repoName }?.purpose == "프론트엔드") "프론트엔드" else "백엔드"
+    val title = e.title?.takeIf { it.isNotBlank() } ?: "이슈 #${e.number}"
+    val items = Regex("""(?m)^\s*[-*]\s*\[[ xX]?\]\s*(.+)$""").findAll(e.body ?: "")
+      .map { it.groupValues[1].trim() }.filter { it.isNotEmpty() }.take(8).toList()
+    return if (items.isEmpty())
+      listOf(TaskEntity(title = title, detail = (e.body ?: "").take(2000).ifBlank { title }, phase = phase, repo = repoName, owner = "ai"))
+    else items.map { TaskEntity(title = it, detail = "이슈 #${e.number} '$title' 의 체크리스트 항목이에요.", phase = phase, repo = repoName, owner = "ai") }
+  }
+
   // ---- 자동 디스패치 — 단계 순서(스키마→…→릴리즈) 안에서 우선순위(P1→P3)·seq 순으로,
   // 진행 중 ai 작업이 dispatchLimit 미만일 때만 대기 작업을 자동 착수해요. ----
 
@@ -535,6 +628,16 @@ class TaskService(
        "repo":"담당 저장소 이름","owner":"ai|human|auto","priority":"P1|P2|P3","estimate":"S|M|L"}
       규칙: 15개 이내. 사람만 할 수 있는 일(외부 키 발급, PR 머지 승인, production 배포 승인)은 owner:"human".
       CI·자동 배포처럼 워크플로가 하는 일은 owner:"auto". 나머지 구현은 owner:"ai".
+      repo 는 주어진 저장소 이름 중에서만 고르세요.
+    """.trimIndent()
+
+    private val ISSUE_TASKS_SYSTEM = """
+      당신은 시니어 테크리드입니다. 주어진 GitHub 이슈 하나를 구현 가능한 작업 단위로 분해하세요.
+      JSON 배열만 출력하세요(설명·코드펜스 금지). 각 원소:
+      {"title":"...","detail":"...","domain":"...","phase":"스키마|프론트엔드|백엔드|외부 키 발급|QA|릴리즈",
+       "repo":"담당 저장소 이름","owner":"ai|human|auto","priority":"P1|P2|P3","estimate":"S|M|L"}
+      규칙: 1~8개. code 는 쓰지 마세요(서버가 기존 번호에 이어서 부여해요). 기존 작업과 중복되는 일은 만들지 마세요.
+      사람만 할 수 있는 일은 owner:"human", 워크플로가 하는 일은 owner:"auto", 나머지 구현은 owner:"ai".
       repo 는 주어진 저장소 이름 중에서만 고르세요.
     """.trimIndent()
   }
