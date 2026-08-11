@@ -92,6 +92,17 @@ data class BridgeConfigRequest(val mode: String? = null) // github | local
 data class ReviewQueueItemDto(val projectId: String, val projectName: String, val taskId: String, val code: String, val title: String, val updatedAt: String)
 data class ReviewQueueDto(val count: Int, val items: List<ReviewQueueItemDto>)
 
+// ---- 외부 알림 채널 (Slack Webhook · 이메일) ----
+data class NotifyStatusDto(
+  val slackConfigured: Boolean,
+  val emailTo: String?,
+  val smtpConfigured: Boolean, // 서버 환경 변수 SMTP_HOST 유무
+  val emailReady: Boolean, // SMTP + 받는 주소 모두 준비됨
+)
+data class NotifyConfigRequest(val slackWebhook: String? = null, val emailTo: String? = null) // "" 는 지우기
+data class NotifyChannelResultDto(val ok: Boolean, val message: String)
+data class NotifyTestDto(val slack: NotifyChannelResultDto, val email: NotifyChannelResultDto)
+
 // ---- 서버 구성 상태 — 루프가 실제로 돌 수 있는 설정인지 UI 가 보여줘요 ----
 data class CapabilitiesDto(
   val llm: String, // anthropic | openai | none — 문서·작업 분해 에이전트

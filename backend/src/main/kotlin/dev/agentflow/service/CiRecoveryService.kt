@@ -28,6 +28,7 @@ class CiRecoveryService(
   private val runs: RunRepository,
   private val pulls: PullRepository,
   private val dispatcher: AgentDispatchService,
+  private val notifier: NotificationService,
 ) {
   // 마지막 스윕 결과 — 과거엔 스케줄러의 runCatching 으로 버려져 UI 에서 볼 수 없었어요.
   // 이제 프로젝트별로 남겨 /ci-recovery/status 가 보여줘요(메모리 — 재시작 시 초기화).
@@ -71,6 +72,10 @@ class CiRecoveryService(
         record(task.id, "CI 회복", "실패한 워크플로 '${run.name ?: "workflow"}' → @claude 수정 지시 (${if (prNumber != null) "PR #$prNumber" else "이슈 #${task.issueNumber}"})")
         notified += CiRecoveryItemDto(task.code, run.name ?: "workflow", run.htmlUrl, prNumber, task.issueNumber)
       }
+    }
+    // 스윕 오류는 30초마다 반복될 수 있어 같은 메시지는 한 번만 알려요(변경 시에만 발송).
+    if (failMsg != null && lastSweep[projectId]?.message != failMsg) {
+      notifier.notify("CI 회복 오류: ${project.name}", "$failMsg — 해결될 때까지 30초마다 재시도해요.")
     }
     lastSweep[projectId] = SweepMemo(Instant.now().toString(), notified.size, pending, failMsg)
     return CiRecoveryResultDto(notified, pending, failMsg)

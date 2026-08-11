@@ -47,6 +47,7 @@ class TaskService(
   private val issues: IssueRepository,
   private val pulls: PullRepository,
   private val comments: CommentRepository,
+  private val notifier: NotificationService,
 ) {
   fun list(projectId: String): List<TaskDto> {
     val project = projects.findById(projectId).orElse(null) ?: return emptyList()
@@ -537,6 +538,12 @@ class TaskService(
         if (state == "closed" && t.status != "완료" && t.status != "검토 대기") {
           t.status = "검토 대기"
           record(t.id, "검토 대기", "연결 이슈 #$n 닫힘 → 검토 대기. 완료는 사람이 승인해요.")
+          // 루프를 닫는 사람 게이트 도착 — 외부 채널로도 알려요(전이는 edge 트리거라 1회).
+          notifier.notify(
+            "검토 대기: [${t.code}] ${t.title}",
+            "프로젝트 '${project.name}' — 이슈 #$n 이 닫혔어요. 사람 승인(또는 피드백)이 있어야 완료돼요.",
+            t.issueUrl,
+          )
         } else if (state == "open" && t.status == "검토 대기") {
           t.status = "진행 중"
           record(t.id, "재개", "이슈 #$n 다시 열림 → 진행 중")

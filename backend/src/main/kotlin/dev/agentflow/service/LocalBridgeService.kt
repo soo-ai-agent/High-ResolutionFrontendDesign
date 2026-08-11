@@ -22,6 +22,7 @@ class LocalBridgeService(
   private val props: AppProps,
   private val gitHub: GitHubService,
   private val activities: TaskActivityRepository,
+  private val notifier: NotificationService,
   @Value("\${MIRROR_DATA_DIR:./.data}") private val dataDir: String,
 ) {
   class Job(
@@ -205,6 +206,11 @@ class LocalBridgeService(
     job.note = note
     record(job.taskId, "브리지 실패", note)
     runCatching { gitHub.comment(job.owner, job.repo, job.number, "🔧 로컬 브리지 실행 실패 — $note") }
+    // 무인 운영 중 실행기가 멈춘 순간 — 사람이 재시도·원인 확인을 해야 해요.
+    notifier.notify(
+      "브리지 실패: ${job.owner}/${job.repo}#${job.number}" + (job.taskCode?.let { " [$it]" } ?: ""),
+      "$note\n설정 화면에서 로그 확인·재시도할 수 있어요 (잡 #${job.id}).",
+    )
   }
 
   // 클론 인증 — https 원격이면 토큰을 URL 에 넣어요(작업 공간 .git/config 에 남으니

@@ -20,6 +20,7 @@ repositories {
 dependencies {
   implementation("org.springframework.boot:spring-boot-starter-web")
   implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+  implementation("org.springframework.boot:spring-boot-starter-mail") // 외부 알림(이메일) 채널
   implementation("com.fasterxml.jackson.module:jackson-module-kotlin")
   implementation("org.jetbrains.kotlin:kotlin-reflect")
   runtimeOnly("com.h2database:h2")            // 로컬/기본 프로파일

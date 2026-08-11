@@ -20,6 +20,7 @@ class ReviewLoopService(
   private val tasks: TaskRepository,
   private val activities: TaskActivityRepository,
   private val dispatcher: AgentDispatchService,
+  private val notifier: NotificationService,
 ) {
   @EventListener
   fun onPull(e: PullActivity) {
@@ -43,6 +44,11 @@ class ReviewLoopService(
           // 한도 도달은 한 번만 기록 — 이후 push 에는 반응하지 않아요.
           if (acts.none { it.kind == "리뷰 한도" && prRef.containsMatchIn(it.note) }) {
             record(t.id, "리뷰 한도", "PR #${e.number} 리뷰 ${limit}라운드 초과 — 자동 지시 중단, 사람 검토가 필요해요.")
+            // 에스컬레이션 — 자동 루프가 손을 뗀 순간이라 사람에게 알려요(기록과 함께 1회).
+            notifier.notify(
+              "리뷰 한도 초과: [${t.code}] ${t.title}",
+              "프로젝트 '${p.name}' — PR #${e.number} 자동 리뷰가 ${limit}라운드를 넘었어요. 사람 검토가 필요해요.",
+            )
           }
           return
         }

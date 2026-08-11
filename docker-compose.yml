@@ -17,6 +17,12 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-} # 문서·작업 분해 에이전트 (권장)
       OPENAI_API_KEY: ${OPENAI_API_KEY:-} # 폴백 LLM (선택)
       GITHUB_TOKEN: ${GITHUB_TOKEN:-} # PAT 미연결 시 규칙·스킬 동기화 폴백 (선택)
+      # 이메일 알림 발신 서버 (선택) — 받는 주소는 설정 › 외부 알림 채널에서
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
       # 운영 Postgres 전환 시 주석 해제:
       # SPRING_PROFILES_ACTIVE: prod
       # DATABASE_URL: postgres://user:pass@host:5432/db

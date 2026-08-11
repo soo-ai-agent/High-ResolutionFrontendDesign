@@ -17,6 +17,9 @@
 | `GITHUB_WEBHOOK_SECRET` | 운영 필수 | (없음) | 웹훅 `x-hub-signature-256` HMAC 키. 미설정 시 검증 생략(개발용). |
 | `GITHUB_API_BASE` | — | `https://api.github.com` | GH Enterprise/테스트 스텁용. |
 | `SPRING_PROFILES_ACTIVE` | 운영 | (default=H2) | `prod` → Postgres. |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM` | 선택 | (없음) | 이메일 알림(검토 대기·리뷰 한도·브리지 실패·CI 회복 오류) 발신 서버. 받는 주소는 **설정 › 외부 알림 채널**에서 입력. `SMTP_STARTTLS=false` 로 STARTTLS 끔. |
+| `E2E_COMMAND` | 선택 | (없음) | 대시보드 '테스트 실행' 버튼이 스폰할 명령 (예: `node e2e/run.mjs`). |
+| `BRIDGE_COMMAND` / `BRIDGE_GIT_BASE` | 선택 | claude CLI / github.com | 로컬 브리지의 실행 명령·클론 원격 베이스 오버라이드. |
 | `DATABASE_URL` | prod | — | 두 형식 지원: `jdbc:postgresql://host:5432/db`(+ `DATABASE_USER`/`DATABASE_PASSWORD`) **또는** `postgres://user:pass@host:5432/db` DSN(Fly/Render/Heroku). `prod` 프로파일이면 JPA가 테이블을 자동 생성(ddl-auto=update). |
 
 > PAT는 환경 변수가 아니라 **런타임에 설정 › 연동**에서 연결해요. 연결하면 데이터 폴더 DB에

@@ -6,6 +6,7 @@ import { listTasks, patchTask, syncTaskIssue, getTaskInsight, reviewTask, type T
 const HT_DOMAIN_TONE: Record<string, any> = { admin: "blue", auth: "purple", chat: "success", vehicles: "warning", matching: "blue", notification: "purple", infra: "neutral", release: "error" }
 import { useGitHub, GitHubError } from "../lib/github"
 import { getBridgeStatus, setBridgeMode, cancelBridgeJob, retryBridgeJob, bridgeJobLog, getCapabilities, type BridgeStatus, type Capabilities } from "../lib/bridge"
+import { getNotifyStatus, setNotifyConfig, testNotify, type NotifyStatus } from "../lib/notify"
 
 const TOKEN_RE = /^(ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)/
 // 프록시 쓰기(repo)·웹훅 등록(admin:repo_hook)·Actions 조회(workflow) 권한을 미리 담아요.
@@ -388,8 +389,82 @@ export function Settings({ navigate }: { navigate: (r: string) => void }) {
       <SectionTitle title="연동 설정" desc="GitHub 계정을 연결하면 미러·이슈·웹훅이 실제로 동작해요." />
       <GitHubConnect navigate={navigate} />
       <AgentModeCard />
+      <NotificationCard />
       <ServerConfigCard />
     </div>
+  )
+}
+
+// 외부 알림 채널 — 검토 대기 도착·리뷰 한도 초과·브리지 실패·CI 회복 오류를 Slack/이메일로.
+// 받는 곳(웹훅·주소)은 여기서 입력해 서버 DB 에 저장, SMTP 서버는 환경 변수로.
+function NotificationCard() {
+  const [st, setSt] = useState<NotifyStatus | null>(null)
+  const [webhook, setWebhook] = useState("")
+  const [emailTo, setEmailTo] = useState("")
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState("")
+  const [err, setErr] = useState("")
+
+  useEffect(() => { getNotifyStatus().then((s) => { setSt(s); setEmailTo(s.emailTo ?? "") }).catch(() => {}) }, [])
+
+  const save = async () => {
+    setBusy(true); setErr(""); setMsg("")
+    try {
+      // 웹훅 입력이 비어 있으면 '변경 없음' — 지우려면 "지우기" 버튼을 쓰세요.
+      const cfg: { slackWebhook?: string; emailTo?: string } = { emailTo }
+      if (webhook.trim()) cfg.slackWebhook = webhook.trim()
+      const s = await setNotifyConfig(cfg)
+      setSt(s); setWebhook("")
+      setMsg("저장했어요.")
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const clearSlack = async () => {
+    setBusy(true); setErr(""); setMsg("")
+    try { setSt(await setNotifyConfig({ slackWebhook: "" })); setMsg("Slack 웹훅을 지웠어요.") } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+  const test = async () => {
+    setBusy(true); setErr(""); setMsg("")
+    try {
+      const r = await testNotify()
+      setMsg(`Slack: ${r.slack.ok ? "✅" : "—"} ${r.slack.message} · 이메일: ${r.email.ok ? "✅" : "—"} ${r.email.message}`)
+    } catch (e) { setErr((e as Error).message) } finally { setBusy(false) }
+  }
+
+  return (
+    <Card className="space-y-3 p-5">
+      <div>
+        <div className="text-[14px] font-bold text-text-primary">외부 알림 채널</div>
+        <p className="mt-1 text-[12px] leading-relaxed text-text-secondary">
+          <b>검토 대기 도착 · 리뷰 한도 초과 · 브리지 실패 · CI 회복 오류</b>를 Slack/이메일로 보내요 — 앱을 열지 않아도 사람 차례를 알 수 있어요.
+        </p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div>
+          <div className="mb-1.5 flex items-center gap-2 text-[13px] font-bold text-text-primary">
+            Slack Incoming Webhook
+            <Badge tone={st?.slackConfigured ? "success" : "neutral"}>{st?.slackConfigured ? "설정됨" : "미설정"}</Badge>
+            {st?.slackConfigured && <button onClick={clearSlack} disabled={busy} className="text-[11px] font-semibold text-text-tertiary underline hover:text-error">지우기</button>}
+          </div>
+          <input value={webhook} onChange={(e) => setWebhook(e.target.value)} type="password" placeholder={st?.slackConfigured ? "(저장돼 있어요 — 바꿀 때만 입력)" : "https://hooks.slack.com/services/…"}
+            className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 font-mono text-[12px] outline-none focus:border-blue" />
+        </div>
+        <div>
+          <div className="mb-1.5 flex items-center gap-2 text-[13px] font-bold text-text-primary">
+            이메일 받는 주소
+            <Badge tone={st?.emailReady ? "success" : "neutral"}>{st?.emailReady ? "준비됨" : st?.smtpConfigured ? "주소 필요" : "SMTP 미설정"}</Badge>
+          </div>
+          <input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="dev@example.com"
+            className="h-10 w-full rounded-[10px] border border-line bg-surface px-3 text-[13px] outline-none focus:border-blue" />
+          {!st?.smtpConfigured && <p className="mt-1 text-[11px] text-text-tertiary">보내는 서버는 환경 변수로: <code className="font-mono">SMTP_HOST · SMTP_PORT · SMTP_USER · SMTP_PASS · SMTP_FROM</code></p>}
+        </div>
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="primary" size="sm" onClick={save} loading={busy}>저장</Button>
+        <Button size="sm" onClick={test} disabled={busy} icon={<Icon name="play" className="h-4 w-4" />}>테스트 발송</Button>
+      </div>
+      {msg && <div className="rounded-[10px] bg-surface-2 px-3 py-2 text-[12px] font-medium text-text-secondary">{msg}</div>}
+      {err && <div className="rounded-[10px] bg-error-light px-3 py-2 text-[12px] font-semibold text-error">{err}</div>}
+    </Card>
   )
 }
 
